@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "date": "2025-12-13",
+    "author": "テスト",
+    "indication": "複数個体の一括表記機能テスト"
+  },
+  "individuals": [
+    {
+      "id": "I-1",
+      "gender": "M",
+      "status": [],
+      "current_age": "75"
+    },
+    {
+      "id": "I-2",
+      "gender": "F",
+      "status": [],
+      "current_age": "73"
+    },
+    {
+      "id": "II-1",
+      "gender": "F",
+      "status": ["affected", "proband"],
+      "current_age": "48",
+      "diagnoses": [
+        {
+          "condition": "乳癌",
+          "age_at_diagnosis": "45",
+          "type": "Triple negative",
+          "status": "治療中"
+        }
+      ]
+    },
+    {
+      "id": "II-2",
+      "gender": "M",
+      "count": 5,
+      "status": [],
+      "notes": "5人の兄弟（詳細不明）"
+    },
+    {
+      "id": "II-3",
+      "gender": "F",
+      "count": 3,
+      "status": [],
+      "notes": "3人の姉妹（詳細不明）"
+    }
+  ],
+  "relationships": [
+    {
+      "partners": ["I-1", "I-2"],
+      "type": "spouse",
+      "children": ["II-1", "II-2", "II-3"]
+    }
+  ]
+}
