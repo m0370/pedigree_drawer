@@ -12,11 +12,12 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 *   自然言語での対話から家系情報を構造化し、SVG形式の家系図を自動生成します。
 *   **JOHBOC/Bennett 2022年改訂版準拠**: セックスとジェンダーの区別、保因者ドット表記の廃止など、最新の国際標準に準拠しています。
 *   **SVG出力**: draw.io や Illustrator 等で後編集可能なベクターデータを出力します。
+*   **PowerPoint編集**: PowerPoint取り込み後に各線・記号・文字を個別に選択/削除しやすいSVG構造で出力します。
 *   **決定論的レンダリング**: JSON中間表現により、同じ入力から常に同じ出力が得られます。
 
 ## ファイル構成
 *   `genealogy_gpt_instructions.md`: GPTs の "Instructions" に設定するプロンプト。
-*   `pedigree_drawer_lib_v0_1.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python)。
+*   `pedigree_drawer_lib_v0_2.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python)。
 *   `render_pedigree.py`: ローカル環境でJSONからSVGを生成するCLIツール（オプション）。
 *   `開発ログ/`: 開発経緯の記録。
 *   `家系図の描き方/`: JOHBOC家系図記載法などの参考資料。
@@ -26,7 +27,7 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 1. **ChatGPT** で「Explore GPTs」→「+ Create」を選択。
 2. **Configure** タブを開く。
 3. **Instructions** 欄に `genealogy_gpt_instructions.md` の内容をすべて貼り付ける。
-4. **Knowledge** の「Upload files」から `pedigree_drawer_lib_v0_1.py` をアップロードする。
+4. **Knowledge** の「Upload files」から `pedigree_drawer_lib_v0_2.py` をアップロードする。
 5. **Capabilities** で「Code Interpreter」のみを ON にする（Web Browsing, DALL-E は OFF）。
 6. 保存して使用開始。
 
