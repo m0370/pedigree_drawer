@@ -109,7 +109,7 @@ test_data = {
                     "age_at_diagnosis": "67"
                 }
             ],
-            "medical_notes": ["心筋梗塞（69歳）"]
+            "medical_notes": ["69y 心筋梗塞"]
         }
     ],
     "relationships": [

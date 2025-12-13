@@ -1019,8 +1019,8 @@ class PedigreeChart:
             end_y = cy + half + 2
             self._draw_arrow(g, start_x, start_y, end_x, end_y, arrow_id=self._sid("arrow", person.id))
             if "proband" in person.status:
-                # Position P below the arrow start point
-                add_text(start_x, start_y + 10, "P", size=12, anchor="middle")
+                # Position P below the arrow start point, slightly to the left
+                add_text(start_x - 4, start_y + 10, "P", size=12, anchor="middle")
 
         # Multiple individuals represented by one symbol (JOHBOC 図2)
         count = getattr(person, "count", None)
