@@ -16,7 +16,8 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 *   **決定論的レンダリング**: JSON中間表現により、同じ入力から常に同じ出力が得られます。
 
 ## ファイル構成
-*   `genealogy_gpt_instructions.md`: GPTs の "Instructions" に設定するプロンプト。
+*   `genealogy_gpt_instructions.md`: GPTs の "Instructions" に設定する指示（8000字以内）。
+*   `genealogy_gpt_instructions_full.md`: 指示のロング版（編集用・参照用）。
 *   `pedigree_drawer_lib.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python, v0.6)。
 *   `render_pedigree.py`: ローカル環境でJSONからSVGを生成するCLIツール（オプション）。
 *   `JSON_SCHEMA.md`: JSON中間表現の完全仕様 (v0.6)。
@@ -27,8 +28,8 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 
 1. **ChatGPT** で「Explore GPTs」→「+ Create」を選択。
 2. **Configure** タブを開く。
-3. **Instructions** 欄に `genealogy_gpt_instructions.md` の内容をすべて貼り付ける。
-4. **Knowledge** の「Upload files」から `pedigree_drawer_lib.py` をアップロードする。
+3. **Instructions** 欄に `genealogy_gpt_instructions.md` の内容を貼り付ける（GPTsの上限: 8000文字）。
+4. **Knowledge** の「Upload files」から `pedigree_drawer_lib.py` と `JSON_SCHEMA.md` をアップロードする。
 5. **Capabilities** で「Code Interpreter」のみを ON にする（Web Browsing, DALL-E は OFF）。
 6. 保存して使用開始。
 
