@@ -1,0 +1,110 @@
+{
+  "meta": {
+    "date": "2025-12-13"
+  },
+  "individuals": [
+    {
+      "id": "I-1",
+      "gender": "F",
+      "status": ["affected", "deceased"],
+      "diagnoses": [
+        {
+          "condition": "卵巣癌",
+          "age_at_diagnosis": null
+        }
+      ]
+    },
+    {
+      "id": "I-2",
+      "gender": "M"
+    },
+    {
+      "id": "I-3",
+      "gender": "F",
+      "status": ["affected", "deceased"],
+      "age_at_death": "65",
+      "diagnoses": [
+        {
+          "condition": "乳癌",
+          "age_at_diagnosis": "60"
+        }
+      ]
+    },
+    {
+      "id": "II-1",
+      "gender": "F",
+      "current_age": "52"
+    },
+    {
+      "id": "II-2",
+      "gender": "F",
+      "status": ["affected", "proband"],
+      "diagnoses": [
+        {
+          "condition": "乳癌",
+          "age_at_diagnosis": "50"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "result": "BRCA2 pathogenic variant"
+      }
+    },
+    {
+      "id": "II-3",
+      "gender": "M",
+      "current_age": "55"
+    },
+    {
+      "id": "III-1",
+      "gender": "M",
+      "current_age": "28"
+    },
+    {
+      "id": "III-2",
+      "gender": "F",
+      "current_age": "25"
+    },
+    {
+      "id": "III-3",
+      "gender": "F",
+      "current_age": "28",
+      "status": ["carrier"],
+      "genetic_testing": {
+        "tested": true,
+        "result": "BRCA2 pathogenic variant"
+      }
+    },
+    {
+      "id": "III-4",
+      "gender": "M",
+      "current_age": "30"
+    },
+    {
+      "id": "IV-1",
+      "gender": "F",
+      "current_age": "2"
+    }
+  ],
+  "relationships": [
+    {
+      "type": "siblings",
+      "siblings": ["I-3", "I-1"]
+    },
+    {
+      "type": "spouse",
+      "partners": ["I-2", "I-3"],
+      "children": ["II-1", "II-2"]
+    },
+    {
+      "type": "spouse",
+      "partners": ["II-2", "II-3"],
+      "children": ["III-1", "III-2", "III-3"]
+    },
+    {
+      "type": "spouse",
+      "partners": ["III-3", "III-4"],
+      "children": ["IV-1"]
+    }
+  ]
+}
