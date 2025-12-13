@@ -20,6 +20,9 @@ test_*.svg
 # Test runs (generated)
 開発ログ/test_run/
 
+# Local test runs (generated)
+test_run/
+
 # Keep curated reference artifacts (if needed)
 !開発ログ/試運転\ v0.1/
 !開発ログ/試運転\ v0.1/*.svg
