@@ -122,7 +122,7 @@ class PedigreeChart:
         self.spouse_gap = 36.0  # Increased from 24.0 to prevent text overlap
         self.unit_gap = 80.0     # Increased from 52.0 to prevent text overlap
         self.gen_gap = 120.0
-        self.margin_x = 40.0
+        self.margin_x = 60.0     # Increased from 40.0 to provide more space between generation labels and symbols
         self.margin_y = 40.0
         self.font_family = "Arial, Helvetica, sans-serif"
         self.stroke_width = 2.0
