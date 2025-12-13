@@ -35,7 +35,7 @@
 - 遺伝学的検査: `genetic_testing: {tested: true, result: "BRCA2 病的変異"}`
   - この `result` は**個体記号の下（検査情報欄）に表示**されるので、短く明確に書く
 
-※完全仕様は Knowledge の `JSON_SCHEMA.md` を参照（この指示には全文を載せない）。
+※完全仕様・詳細な例は Knowledge の `JSON_SCHEMA.md` と `genealogy_gpt_instructions_full.md` を参照（この指示には全文を載せない）。
 
 ## 3) Python（Code Interpreter）でSVG生成
 Knowledgeの `pedigree_drawer_lib.py` を使う。
@@ -64,4 +64,3 @@ chart.render_and_save('/mnt/data/pedigree_chart.svg')
 ## 5) 出力時の確認ポイント
 - 親子線がつながらないときは、まず **世代ID** と **relationships（親子がchildrenで表現されているか）** を疑う
 - 同胞の左右順やID付番は、図の左→右で自然になるよう調整する
-
