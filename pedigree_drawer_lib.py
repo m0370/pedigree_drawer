@@ -129,6 +129,9 @@ class PedigreeChart:
         self.symbol_size = 40.0
         self.spouse_gap = 80.0  # Same as unit_gap for consistent spacing (increased from 36.0)
         self.unit_gap = 80.0     # Increased from 52.0 to prevent text overlap
+        # Allow limited horizontal compression when necessary to keep pinned parent-child vertical alignment.
+        # Used in crowded generations where fixed unit_gap would otherwise push a single-parent child away.
+        self.min_unit_gap = 20.0
         self.gen_gap = 120.0
         self.margin_x = 60.0     # Increased from 40.0 to provide more space between generation labels and symbols
         self.margin_y = 40.0
@@ -342,6 +345,7 @@ class PedigreeChart:
         initial_x: Dict[str, float] = {}
 
         for gen in range(min_gen, max_gen + 1):
+            pinned_children_in_gen: set = set()
             units = self._units_for_generation(gen)
 
             # Baseline anchors: input order (deterministic)
@@ -365,6 +369,7 @@ class PedigreeChart:
                             child = self.people.get(cid)
                             if child and child.generation == gen:
                                 initial_x[cid] = mid  # Position child directly under parent
+                                pinned_children_in_gen.add(cid)
                             continue
                         # For multiple children, apply standard offset
                         child_dx = self.symbol_size + 36.0
@@ -429,6 +434,37 @@ class PedigreeChart:
                     left = max(desired_left, cursor_left)
                 unit["left"] = left
                 cursor_left = left + width + self.unit_gap
+
+            # Post-pass: try to keep pinned single-parent children vertically aligned by compressing gaps
+            # (down to min_unit_gap) instead of letting unit_gap push them away.
+            if pinned_children_in_gen and units:
+                min_gap = float(getattr(self, "min_unit_gap", self.unit_gap))
+                for idx, unit in enumerate(units):
+                    if unit.get("kind") != "single":
+                        continue
+                    pid = (unit.get("members") or [None])[0]
+                    if pid not in pinned_children_in_gen:
+                        continue
+                    desired_left = unit["anchor"] - unit["width"] / 2
+                    shift_needed = unit["left"] - desired_left
+                    if shift_needed <= 1e-6:
+                        continue
+                    # Reduce gaps before this unit, starting from the nearest, shifting this unit and all to its right.
+                    for j in range(idx - 1, -1, -1):
+                        left_unit = units[j]
+                        right_unit = units[j + 1]
+                        gap = right_unit["left"] - (left_unit["left"] + left_unit["width"])
+                        reducible = gap - min_gap
+                        if reducible <= 1e-6:
+                            continue
+                        take = reducible if reducible < shift_needed else shift_needed
+                        if take <= 1e-6:
+                            continue
+                        for k in range(j + 1, len(units)):
+                            units[k]["left"] -= take
+                        shift_needed -= take
+                        if shift_needed <= 1e-6:
+                            break
 
             for unit in units:
                 if unit["kind"] == "single":
