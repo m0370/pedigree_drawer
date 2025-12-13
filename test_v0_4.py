@@ -126,7 +126,7 @@ test_data = {
         {
             "partners": ["I-1", "I-2"],
             "type": "spouse",
-            "children": ["II-1", "II-2", "II-5"]
+            "children": ["II-1", "II-5", "II-2"]
         },
         {
             "type": "siblings",
