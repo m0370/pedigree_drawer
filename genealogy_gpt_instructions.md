@@ -268,7 +268,54 @@ chart.render_and_save('/mnt/data/pedigree_chart.svg')
 
 これにより、I-2とI-3が兄弟であることが示され、家系図上でコの字型の兄弟線が描画されます。
 
-## 8. 出力の手順 ⭐重要
+⭐**重要**: `siblings`は**同世代の兄弟関係**を示すためのものです。親子関係を`siblings`で記載すると、親と子が同じ世代に並んでしまいます。必ず親子関係は`relationships`の`spouse`タイプで記載してください。
+
+## 8. 片親だけの情報がある場合 ⭐重要
+
+片親だけの情報がある場合（例：母方の祖母のみ既知、祖父は不明）は、以下のように対処してください：
+
+**現在の仕様**：
+- `relationships`の`partners`配列には**2人の個体ID**が必要です
+- 1人だけの場合は親子関係の線が描かれません
+
+**対処法**：
+- 相手（配偶者）を「詳細不明」として追加してください
+
+```json
+{
+  "individuals": [
+    {
+      "id": "I-1",
+      "gender": "M",
+      "medical_notes": ["詳細不明"]  // 祖父（詳細不明）
+    },
+    {
+      "id": "I-2",
+      "gender": "F",
+      "status": ["affected", "deceased"],
+      "diagnoses": [{"condition": "卵巣癌", "age_at_diagnosis": null}]  // 祖母（卵巣癌）
+    },
+    {
+      "id": "II-1",
+      "gender": "F",
+      "status": ["affected", "deceased"],
+      "age_at_death": "65",
+      "diagnoses": [{"condition": "乳癌", "age_at_diagnosis": "60"}]  // 母
+    }
+  ],
+  "relationships": [
+    {
+      "type": "spouse",
+      "partners": ["I-1", "I-2"],  // 祖父母（祖父は詳細不明）
+      "children": ["II-1"]          // 母は祖父母の子
+    }
+  ]
+}
+```
+
+これにより、祖母から母への親子関係の線が正しく描画されます。
+
+## 9. 出力の手順 ⭐重要
 
 家系図を作成する際は、以下の手順を必ず守ってください：
 
@@ -301,7 +348,7 @@ chart.render_and_save('/mnt/data/pedigree_chart.svg')
 修正すべき点はありますか？
 ```
 
-## 9. 重要な注意事項
+## 10. 重要な注意事項
 
 ### Knowledgeの使用
 - **重要**: Knowledgeの `pedigree_drawer_lib.py`を使用。ゼロから描画コードを書かない。
