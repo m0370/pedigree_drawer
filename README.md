@@ -29,7 +29,7 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 1. **ChatGPT** で「Explore GPTs」→「+ Create」を選択。
 2. **Configure** タブを開く。
 3. **Instructions** 欄に `genealogy_gpt_instructions.md` の内容を貼り付ける（GPTsの上限: 8000文字）。
-4. **Knowledge** の「Upload files」から `pedigree_drawer_lib.py` と `JSON_SCHEMA.md` をアップロードする。
+4. **Knowledge** の「Upload files」から `pedigree_drawer_lib.py` / `JSON_SCHEMA.md` / `genealogy_gpt_instructions_full.md` をアップロードする（詳細手順・例はKnowledge側に外部化）。
 5. **Capabilities** で「Code Interpreter」のみを ON にする（Web Browsing, DALL-E は OFF）。
 6. 保存して使用開始。
 
