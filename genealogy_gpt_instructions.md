@@ -77,7 +77,10 @@
   "current_age": "48",              // 生存者の現在年齢
   "age_at_death": null,             // 死亡者の死亡年齢
   "age_unit": "y",                  // 年齢単位（"y"=年, "m"=月, "d"=日, "w"=週）デフォルト"y"
-  "status": ["affected", "proband"],
+  "status": ["affected", "proband"], // 利用可能な値: "affected"(罹患), "deceased"(死亡),
+                                      // "carrier"または"presymptomatic_carrier"(無症状変異保有者・縦線),
+                                      // "proband"(発端者), "consultand"(来談者), "verified"(記録確認済),
+                                      // "pregnancy"(妊娠中), "miscarriage"(流産), "abortion"(中絶), "stillbirth"(死産)
 
   // ⭐最重要：診断情報配列
   "diagnoses": [

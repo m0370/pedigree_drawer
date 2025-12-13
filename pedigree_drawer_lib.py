@@ -31,7 +31,7 @@ Supported (subset, JOHBOC 図1〜5に準拠する範囲):
 - gender: "M" (□), "F" (○), "U" (◇)
 - status: "affected" (filled), "deceased" (slash "/"), "stillbirth" (sex symbol + slash + SB),
           "miscarriage" (triangle), "abortion" (triangle + "/" slash),
-          "pregnancy" (P inside), "presymptomatic_carrier" (vertical line),
+          "pregnancy" (P inside), "presymptomatic_carrier" or "carrier" (vertical line),
           "verified" (*), "proband" (arrow + P), "consultand" (arrow)
 - relationships: type "spouse" | "consanguineous" | "divorced" | "separated"
 - age_unit: "y" (years), "m" (months), "d" (days) with automatic suffix
@@ -1003,7 +1003,7 @@ class PedigreeChart:
         if "deceased" in person.status or "stillbirth" in person.status:
             add_line(cx - half - 6, cy + half + 6, cx + half + 6, cy - half - 6, lid=self._sid("deceased", person.id))  # "/"
 
-        if "presymptomatic_carrier" in person.status:
+        if "presymptomatic_carrier" in person.status or "carrier" in person.status:
             add_line(cx, cy - half, cx, cy + half, lid=self._sid("carrier", person.id), stroke_color="#fff" if is_affected else "#000")
 
         if "verified" in person.status:

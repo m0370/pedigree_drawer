@@ -160,7 +160,7 @@ JOHBOC記載法では、複数の同胞を1つの記号で表すことができ�
 - `"proband"` - 発端者（P + 矢印）
 - `"consultand"` - 来談者（矢印のみ）
 - `"verified"` - 記録確認済み（*）
-- `"presymptomatic_carrier"` - 無症状変異保有者（縦線）
+- `"presymptomatic_carrier"` または `"carrier"` - 無症状変異保有者（縦線）
 - `"pregnancy"` - 妊娠中（記号内にP）
 - `"miscarriage"` - 自然流産（△）
 - `"abortion"` - 人工妊娠中絶（△+斜線）
