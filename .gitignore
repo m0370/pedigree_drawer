@@ -13,6 +13,10 @@
 genealogy_gpt_instructions.md.backup
 test_output.svg
 
+# Test files
+test_*.json
+test_*.svg
+
 # Test runs (generated)
 開発ログ/test_run/
 
