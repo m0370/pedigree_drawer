@@ -1,9 +1,11 @@
 """
-pedigree_drawer_lib.py (v0.5)
+pedigree_drawer_lib.py (v0.6)
 
 Deterministic renderer: JSON (intermediate representation) -> SVG.
 
 Version History:
+- v0.6 (2025-12-14): Genetic testing display + relationship guidance
+  - 遺伝学的検査結果（genetic_testing.result / display）の描画に対応（個体記号の下に表示）
 - v0.5 (2025-12-13〜2025-12-14): JOHBOC図5完全準拠への改善
   - 個人番号を右上にアラビア数字のみで表示（図5準拠）
   - 兄弟間横線の位置を下げて親の情報と重ならないよう改善
@@ -13,6 +15,7 @@ Version History:
   - 保因者縦線の修正（未発症保因者のみに描画）
   - 世代番号の命名規則明確化（親世代なし→発端者をI世代から開始）
   - 左マージンの拡大（margin_x: 40→60px）
+  - **片親のみの親子関係サポート**（JOHBOC図5準拠、partners配列が1人でも可）
 - v0.4 (2025-12-13): 兄弟関係の描画改善とレイアウト最適化
   - 親がいない兄弟の線描画対応（sibship line）
   - relationshipsに"siblings"タイプを追加
@@ -93,6 +96,7 @@ class Person:
     age_unit: str = "y"  # "y" (years), "m" (months), "d" (days)
     diagnoses: List[dict] = field(default_factory=list)
     medical_notes: List[str] = field(default_factory=list)
+    genetic_testing: Optional[dict] = None
     name: Optional[str] = None
     x: float = 0.0
     y: float = 0.0
@@ -101,7 +105,7 @@ class Person:
 
 @dataclass
 class Family:
-    partners: Tuple[str, str]
+    partners: Tuple[str, ...]  # Single parent (len=1) or couple (len=2)
     type: str
     children: List[str] = field(default_factory=list)
     child_meta: Dict[str, dict] = field(default_factory=dict)
@@ -178,6 +182,9 @@ class PedigreeChart:
             age_unit = str(p_data.get("age_unit") or "y").strip()
             diagnoses = list(p_data.get("diagnoses") or [])
             medical_notes = list(p_data.get("medical_notes") or [])
+            genetic_testing = p_data.get("genetic_testing")
+            if not isinstance(genetic_testing, dict):
+                genetic_testing = None
 
             self.people[pid] = Person(
                 id=pid,
@@ -188,6 +195,7 @@ class PedigreeChart:
                 age_unit=age_unit,
                 diagnoses=diagnoses,
                 medical_notes=medical_notes,
+                genetic_testing=dict(genetic_testing) if genetic_testing else None,
                 name=str(p_data.get("name")) if p_data.get("name") is not None else None,
             )
             # Optional (JOHBOC 2022/2024): AMAB/AFAB/UAAB etc.
@@ -260,14 +268,24 @@ class PedigreeChart:
         relationships = (data or {}).get("relationships") or []
         for rel in relationships:
             partners = list(rel.get("partners") or [])
-            if len(partners) < 2:
+            if len(partners) == 0:
                 continue
-            p1, p2 = partners[0], partners[1]
-            if p1 not in self.people or p2 not in self.people:
-                continue
-            rel_type = (rel.get("type") or "spouse").strip().lower()
-            if rel_type not in {"spouse", "consanguineous", "divorced", "separated"}:
-                rel_type = "spouse"
+            # Support single parent (len=1) or couple (len=2)
+            if len(partners) == 1:
+                p1 = partners[0]
+                if p1 not in self.people:
+                    continue
+                partner_tuple = (p1,)
+                rel_type = "single_parent"
+            else:  # len >= 2
+                p1, p2 = partners[0], partners[1]
+                if p1 not in self.people or p2 not in self.people:
+                    continue
+                partner_tuple = (p1, p2)
+                rel_type = (rel.get("type") or "spouse").strip().lower()
+                if rel_type not in {"spouse", "consanguineous", "divorced", "separated"}:
+                    rel_type = "spouse"
+
             children: List[str] = []
             child_meta: Dict[str, dict] = {}
 
@@ -294,7 +312,7 @@ class PedigreeChart:
                     relation = str(meta.get("relation") or "").strip().lower()
                     if relation in {"adopted", "adopted_in", "adopted_out", "foster"}:
                         setattr(self.people[cid], "adoption_bracket", True)
-            self.families.append(Family(partners=(p1, p2), type=rel_type, children=children, child_meta=child_meta))
+            self.families.append(Family(partners=partner_tuple, type=rel_type, children=children, child_meta=child_meta))
 
         # Process sibling relationships (for individuals without parents in the pedigree)
         for rel in relationships:
@@ -334,22 +352,70 @@ class PedigreeChart:
             # Refine anchors: if person is a child of a family in prev gen, anchor under that family midpoint.
             if gen > min_gen:
                 for fam in self.families:
-                    p1, p2 = fam.partners
-                    if self.people[p1].generation != gen - 1 or self.people[p2].generation != gen - 1:
-                        continue
-                    mid = (self.people[p1].x + self.people[p2].x) / 2
-                    child_dx = self.symbol_size + 36.0
-                    n = len(fam.children)
-                    for idx, cid in enumerate(fam.children):
-                        child = self.people.get(cid)
-                        if not child or child.generation != gen:
+                    if len(fam.partners) == 1:
+                        # Single parent: use parent's x position directly
+                        p1 = fam.partners[0]
+                        if self.people[p1].generation != gen - 1:
                             continue
-                        offset = (idx - (n - 1) / 2) * child_dx
-                        initial_x[cid] = mid + offset
+                        mid = self.people[p1].x
+                        # IMPORTANT: For single parent with single child, position child directly under parent (vertical line)
+                        # Do not apply child_dx offset - keep child at parent's x position
+                        if len(fam.children) == 1:
+                            cid = fam.children[0]
+                            child = self.people.get(cid)
+                            if child and child.generation == gen:
+                                initial_x[cid] = mid  # Position child directly under parent
+                            continue
+                        # For multiple children, apply standard offset
+                        child_dx = self.symbol_size + 36.0
+                        n = len(fam.children)
+                        for idx, cid in enumerate(fam.children):
+                            child = self.people.get(cid)
+                            if not child or child.generation != gen:
+                                continue
+                            offset = (idx - (n - 1) / 2) * child_dx
+                            initial_x[cid] = mid + offset
+                    else:
+                        # Couple: use midpoint
+                        p1, p2 = fam.partners[0], fam.partners[1]
+                        if self.people[p1].generation != gen - 1 or self.people[p2].generation != gen - 1:
+                            continue
+                        mid = (self.people[p1].x + self.people[p2].x) / 2
+                        child_dx = self.symbol_size + 36.0
+                        n = len(fam.children)
+                        for idx, cid in enumerate(fam.children):
+                            child = self.people.get(cid)
+                            if not child or child.generation != gen:
+                                continue
+                            offset = (idx - (n - 1) / 2) * child_dx
+                            initial_x[cid] = mid + offset
 
+            # Calculate anchors for units
+            # Special case: if a couple contains a single child of a single parent,
+            # anchor the couple under the parent (for vertical line alignment)
             for unit in units:
-                anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
-                unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
+                if unit["kind"] == "couple":
+                    # Check if either member is a single child of a single parent
+                    fixed_anchor = None
+                    for pid in unit["members"]:
+                        for fam in self.families:
+                            if len(fam.partners) == 1 and len(fam.children) == 1 and fam.children[0] == pid:
+                                # This person is a single child of a single parent
+                                parent_id = fam.partners[0]
+                                if parent_id in self.people and self.people[parent_id].generation == gen - 1:
+                                    # Anchor the couple under the parent
+                                    fixed_anchor = self.people[parent_id].x
+                                    break
+                        if fixed_anchor is not None:
+                            break
+                    if fixed_anchor is not None:
+                        unit["anchor"] = fixed_anchor
+                    else:
+                        anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
+                        unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
+                else:
+                    anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
+                    unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
 
             units.sort(key=lambda u: (u["anchor"], min(self._input_order.get(pid, 10_000) for pid in u["members"])))
 
@@ -407,17 +473,22 @@ class PedigreeChart:
         units: List[dict] = []
 
         def family_sort_key(fam: Family) -> int:
-            return min(self._input_order.get(fam.partners[0], 10_000), self._input_order.get(fam.partners[1], 10_000))
+            if len(fam.partners) == 1:
+                return self._input_order.get(fam.partners[0], 10_000)
+            else:
+                return min(self._input_order.get(fam.partners[0], 10_000), self._input_order.get(fam.partners[1], 10_000))
 
         families_in_gen = [
             fam
             for fam in self.families
-            if self.people[fam.partners[0]].generation == generation and self.people[fam.partners[1]].generation == generation
+            if len(fam.partners) >= 2 and
+               self.people[fam.partners[0]].generation == generation and
+               self.people[fam.partners[1]].generation == generation
         ]
         families_in_gen.sort(key=family_sort_key)
 
         for fam in families_in_gen:
-            p1, p2 = fam.partners
+            p1, p2 = fam.partners[0], fam.partners[1]
             if p1 in used or p2 in used:
                 continue
             left_pid, right_pid = self._ordered_partners(p1, p2)
@@ -465,14 +536,23 @@ class PedigreeChart:
             self._draw_legend(svg, width, height)
 
         for fam in self.families:
-            p1_id, p2_id = fam.partners
-            p1 = self.people.get(p1_id)
-            p2 = self.people.get(p2_id)
-            if not p1 or not p2:
-                continue
-            self._draw_spouse_line(svg, p1, p2, fam.type)
             children = [self.people[cid] for cid in fam.children if cid in self.people]
-            self._draw_children_lines(svg, p1, p2, children, fam.child_meta)
+            if len(fam.partners) == 1:
+                # Single parent: draw direct line from parent to children
+                p1_id = fam.partners[0]
+                p1 = self.people.get(p1_id)
+                if not p1:
+                    continue
+                self._draw_single_parent_lines(svg, p1, children, fam.child_meta)
+            else:
+                # Couple: draw spouse line and children lines
+                p1_id, p2_id = fam.partners[0], fam.partners[1]
+                p1 = self.people.get(p1_id)
+                p2 = self.people.get(p2_id)
+                if not p1 or not p2:
+                    continue
+                self._draw_spouse_line(svg, p1, p2, fam.type)
+                self._draw_children_lines(svg, p1, p2, children, fam.child_meta)
 
         # Draw sibship lines (for siblings without parents)
         for sibship in self.sibships:
@@ -715,7 +795,13 @@ class PedigreeChart:
             },
         )
         child_xs = [c.x for c in children]
-        min_x, max_x = min(child_xs), max(child_xs)
+        if len(children) == 1:
+            # Single child: draw horizontal line from parent midpoint to child
+            min_x = min(mx, child_xs[0])
+            max_x = max(mx, child_xs[0])
+        else:
+            # Multiple children: draw horizontal line across all children
+            min_x, max_x = min(child_xs), max(child_xs)
         ET.SubElement(
             parent,
             "line",
@@ -833,6 +919,91 @@ class PedigreeChart:
                         "fill": "none",
                     },
                 )
+
+    def _draw_single_parent_lines(self, parent: ET.Element, parent1: Person, children: List[Person], child_meta: Dict[str, dict]) -> None:
+        """Draw lines from single parent to children (JOHBOC standard)"""
+        if not children:
+            return
+        gen = parent1.generation
+        if min(c.generation for c in children) != gen + 1:
+            return
+
+        px = parent1.x
+        parent_bottom = parent1.y
+        child_top = min(c.y for c in children) - self.symbol_size / 2
+
+        if len(children) == 1:
+            # Single child: draw vertical line from parent directly down (JOHBOC standard)
+            child = children[0]
+            meta = child_meta.get(child.id, {}) if isinstance(child_meta, dict) else {}
+            relation = str(meta.get("relation") or "").strip().lower()
+            dash = "6,4" if relation in {"adopted", "adopted_in", "adopted_out", "foster"} else None
+            attrs = {
+                "id": self._sid("child", parent1.id, child.id),
+                "x1": str(px),
+                "y1": str(parent_bottom),
+                "x2": str(px),  # Vertical line: same x position
+                "y2": str(child_top),
+                "stroke": "#000",
+                "stroke-width": str(self.stroke_width),
+                "fill": "none",
+            }
+            if dash:
+                attrs["stroke-dasharray"] = dash
+            ET.SubElement(parent, "line", attrs)
+        else:
+            # Multiple children: draw T-shaped connection
+            mid_y = parent_bottom + (child_top - parent_bottom) * 0.75
+            # Vertical line from parent to sibship line
+            ET.SubElement(
+                parent,
+                "line",
+                {
+                    "id": self._sid("down", parent1.id),
+                    "x1": str(px),
+                    "y1": str(parent_bottom),
+                    "x2": str(px),
+                    "y2": str(mid_y),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                },
+            )
+            # Horizontal sibship line across children
+            child_xs = [c.x for c in children]
+            min_x, max_x = min(child_xs), max(child_xs)
+            ET.SubElement(
+                parent,
+                "line",
+                {
+                    "id": self._sid("sib", parent1.id),
+                    "x1": str(min_x),
+                    "y1": str(mid_y),
+                    "x2": str(max_x),
+                    "y2": str(mid_y),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                },
+            )
+            # Vertical lines from sibship line to each child
+            for child in children:
+                meta = child_meta.get(child.id, {}) if isinstance(child_meta, dict) else {}
+                relation = str(meta.get("relation") or "").strip().lower()
+                dash = "6,4" if relation in {"adopted", "adopted_in", "adopted_out", "foster"} else None
+                attrs = {
+                    "id": self._sid("child", parent1.id, child.id),
+                    "x1": str(child.x),
+                    "y1": str(mid_y),
+                    "x2": str(child.x),
+                    "y2": str(child_top),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                }
+                if dash:
+                    attrs["stroke-dasharray"] = dash
+                ET.SubElement(parent, "line", attrs)
 
     def _draw_sibship_line(self, parent: ET.Element, siblings: List[Person]) -> None:
         """Draw sibship line for siblings without parents (JOHBOC standard)"""
@@ -1092,6 +1263,18 @@ class PedigreeChart:
                         if not s.lower().startswith("d."):
                             below[i] = f"d. {s}"
                         break
+
+        # Genetic testing (JOHBOC 図5の「検査情報」欄に相当): show beneath the symbol.
+        gt = getattr(person, "genetic_testing", None)
+        if isinstance(gt, dict) and (gt.get("tested") is True or str(gt.get("result") or "").strip()):
+            gt_label = str(gt.get("display") or gt.get("label") or gt.get("result") or "").strip()
+            if not gt_label:
+                gt_label = str(gt.get("test_type") or "").strip()
+            variant = str(gt.get("variant") or "").strip()
+            if variant and variant not in gt_label:
+                gt_label = f"{gt_label} ({variant})" if gt_label else variant
+            if gt_label:
+                below.extend(_wrap_text(gt_label, 18))
 
         # Add diagnoses (JOHBOC standard: "45y 乳癌", "54y 直腸癌")
         for dx in person.diagnoses:
