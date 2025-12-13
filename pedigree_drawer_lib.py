@@ -1,9 +1,19 @@
 """
-pedigree_drawer_lib.py (v0.3)
+pedigree_drawer_lib.py (v0.5)
 
 Deterministic renderer: JSON (intermediate representation) -> SVG.
 
 Version History:
+- v0.5 (2025-12-13): JOHBOC図5完全準拠への改善
+  - 個人番号を右上にアラビア数字のみで表示（図5準拠）
+  - 兄弟間横線の位置を下げて親の情報と重ならないよう改善
+  - 発端者マーカー（P+矢印）のレイアウト改善（重なり解消、矢印を短縮）
+  - 凡例機能の追加（meta.show_legend: trueで有効化）
+- v0.4 (2025-12-13): 兄弟関係の描画改善とレイアウト最適化
+  - 親がいない兄弟の線描画対応（sibship line）
+  - relationshipsに"siblings"タイプを追加
+  - 標準ID命名規則の明確化（I-1, I-2形式必須）
+  - レイアウト改善（spouse_gap: 24→36px, unit_gap: 52→80px）
 - v0.3 (2025-12-13): JOHBOC図5準拠の改善
   - 年齢単位サフィックス（y/m/d）の自動付与
   - 診断情報（diagnoses）の描画対応
@@ -82,6 +92,7 @@ class Person:
     name: Optional[str] = None
     x: float = 0.0
     y: float = 0.0
+    display_number: int = 0  # Individual number (left to right in each generation)
 
 
 @dataclass
@@ -92,17 +103,24 @@ class Family:
     child_meta: Dict[str, dict] = field(default_factory=dict)
 
 
+@dataclass
+class Sibship:
+    """Represents a sibling relationship without parents (for drawing sibship lines)"""
+    siblings: List[str] = field(default_factory=list)
+
+
 class PedigreeChart:
     def __init__(self):
         self.people: Dict[str, Person] = {}
         self.families: List[Family] = []
+        self.sibships: List[Sibship] = []
         self._input_order: Dict[str, int] = {}
         self._meta: Dict[str, str] = {}
 
         # Layout config (SVG px units)
         self.symbol_size = 40.0
-        self.spouse_gap = 24.0
-        self.unit_gap = 52.0
+        self.spouse_gap = 36.0  # Increased from 24.0 to prevent text overlap
+        self.unit_gap = 80.0     # Increased from 52.0 to prevent text overlap
         self.gen_gap = 120.0
         self.margin_x = 40.0
         self.margin_y = 40.0
@@ -114,12 +132,17 @@ class PedigreeChart:
         # - styles are inlined (no <style> / class selectors),
         # - arrow markers are avoided (use explicit polygons).
         self.output_profile = "powerpoint"  # "powerpoint" | "generic"
+        self.show_legend = False  # Set to True to display legend (for complex pedigrees with multiple conditions)
 
     def load_from_json(self, data: dict) -> None:
         self.people.clear()
         self.families.clear()
+        self.sibships.clear()
         self._input_order.clear()
         self._meta = dict((data or {}).get("meta") or {})
+
+        # Enable legend if specified in meta or if multiple disease types are present
+        self.show_legend = self._meta.get("show_legend", False)
 
         individuals = (data or {}).get("individuals") or []
         donors_surrogates = (data or {}).get("donors_surrogates") or []
@@ -269,6 +292,16 @@ class PedigreeChart:
                         setattr(self.people[cid], "adoption_bracket", True)
             self.families.append(Family(partners=(p1, p2), type=rel_type, children=children, child_meta=child_meta))
 
+        # Process sibling relationships (for individuals without parents in the pedigree)
+        for rel in relationships:
+            rel_type = (rel.get("type") or "").strip().lower()
+            if rel_type == "siblings":
+                sibs = list(rel.get("siblings") or [])
+                # Filter out invalid IDs
+                valid_sibs = [sid for sid in sibs if sid in self.people]
+                if len(valid_sibs) >= 2:
+                    self.sibships.append(Sibship(siblings=valid_sibs))
+
         self._auto_layout()
 
     def render_and_save(self, filename: str = "pedigree.svg") -> str:
@@ -350,6 +383,20 @@ class PedigreeChart:
             p.x = p.x - min_x + self.margin_x
             p.y = p.y - min_y + self.margin_y
 
+        # Assign display numbers (left to right in each generation, JOHBOC 図5)
+        self._assign_display_numbers()
+
+    def _assign_display_numbers(self) -> None:
+        """Assign display numbers (1, 2, 3...) to individuals left to right in each generation"""
+        gens = sorted(set(p.generation for p in self.people.values()))
+        for gen in gens:
+            people_in_gen = [p for p in self.people.values() if p.generation == gen]
+            # Sort by x position (left to right)
+            people_in_gen.sort(key=lambda p: p.x)
+            # Assign numbers 1, 2, 3...
+            for idx, person in enumerate(people_in_gen, start=1):
+                person.display_number = idx
+
     def _units_for_generation(self, generation: int) -> List[dict]:
         members_in_gen = [p.id for p in self.people.values() if p.generation == generation]
         used = set()
@@ -410,6 +457,9 @@ class PedigreeChart:
         self._draw_generation_labels(svg)
         self._draw_metadata(svg, width, height)
 
+        if self.show_legend:
+            self._draw_legend(svg, width, height)
+
         for fam in self.families:
             p1_id, p2_id = fam.partners
             p1 = self.people.get(p1_id)
@@ -419,6 +469,12 @@ class PedigreeChart:
             self._draw_spouse_line(svg, p1, p2, fam.type)
             children = [self.people[cid] for cid in fam.children if cid in self.people]
             self._draw_children_lines(svg, p1, p2, children, fam.child_meta)
+
+        # Draw sibship lines (for siblings without parents)
+        for sibship in self.sibships:
+            sibs = [self.people[sid] for sid in sibship.siblings if sid in self.people]
+            if len(sibs) >= 2:
+                self._draw_sibship_line(svg, sibs)
 
         for pid in sorted(self.people.keys(), key=lambda k: self._input_order.get(k, 10_000)):
             self._draw_person(svg, self.people[pid])
@@ -475,6 +531,71 @@ class PedigreeChart:
             },
         )
         t.text = created
+
+    def _draw_legend(self, parent: ET.Element, width: int, height: int) -> None:
+        """Draw legend for complex pedigrees (JOHBOC 図5)"""
+        # Legend position: bottom-left
+        start_x = 10.0
+        start_y = height - 120.0
+        line_height = 18.0
+        symbol_size = 12.0
+
+        legend_items = [
+            ("■", "罹患者 (Affected)"),
+            ("／", "死亡 (Deceased)"),
+            ("P", "発端者 (Proband)"),
+            ("*", "記録確認済 (Verified)"),
+        ]
+
+        # Title
+        t = ET.SubElement(
+            parent,
+            "text",
+            {
+                "id": "legend_title",
+                "x": str(start_x),
+                "y": str(start_y),
+                "font-size": "11",
+                "font-weight": "bold",
+                "font-family": self.font_family,
+                "fill": "#000",
+            },
+        )
+        t.text = "凡例 (Legend)"
+
+        # Legend items
+        for idx, (symbol, description) in enumerate(legend_items):
+            y = start_y + line_height * (idx + 1)
+
+            # Symbol
+            t_sym = ET.SubElement(
+                parent,
+                "text",
+                {
+                    "id": f"legend_symbol_{idx}",
+                    "x": str(start_x + 5),
+                    "y": str(y),
+                    "font-size": "10",
+                    "font-family": self.font_family,
+                    "fill": "#000",
+                },
+            )
+            t_sym.text = symbol
+
+            # Description
+            t_desc = ET.SubElement(
+                parent,
+                "text",
+                {
+                    "id": f"legend_desc_{idx}",
+                    "x": str(start_x + 25),
+                    "y": str(y),
+                    "font-size": "10",
+                    "font-family": self.font_family,
+                    "fill": "#666",
+                },
+            )
+            t_desc.text = description
 
     def _draw_spouse_line(self, parent: ET.Element, p1: Person, p2: Person, rel_type: str) -> None:
         if p1.generation != p2.generation:
@@ -571,7 +692,9 @@ class PedigreeChart:
         # Downward line should originate from the couple relationship line (not from the symbol edge).
         parent_bottom = parent1.y
         child_top = min(c.y for c in children) - self.symbol_size / 2
-        mid_y = (parent_bottom + child_top) / 2
+        # JOHBOC 図5: Lower the sibship line to avoid overlapping with parent's information
+        # Use 0.75 ratio (closer to children) to provide more space above for parent's diagnoses
+        mid_y = parent_bottom + (child_top - parent_bottom) * 0.75
 
         ET.SubElement(
             parent,
@@ -707,6 +830,59 @@ class PedigreeChart:
                     },
                 )
 
+    def _draw_sibship_line(self, parent: ET.Element, siblings: List[Person]) -> None:
+        """Draw sibship line for siblings without parents (JOHBOC standard)"""
+        if len(siblings) < 2:
+            return
+
+        # Ensure all siblings are in the same generation
+        gen = siblings[0].generation
+        if not all(s.generation == gen for s in siblings):
+            return
+
+        # Sort siblings by x position (left to right)
+        sibs_sorted = sorted(siblings, key=lambda s: s.x)
+        left = sibs_sorted[0]
+        right = sibs_sorted[-1]
+
+        # Draw horizontal line above the siblings (sibship line)
+        y = left.y - self.symbol_size / 2 - 15.0  # Position above the symbols
+        min_x = left.x
+        max_x = right.x
+
+        # Draw the horizontal sibship line
+        ET.SubElement(
+            parent,
+            "line",
+            {
+                "id": self._sid("sibship", "_".join(s.id for s in sibs_sorted[:2])),
+                "x1": str(min_x),
+                "y1": str(y),
+                "x2": str(max_x),
+                "y2": str(y),
+                "stroke": "#000",
+                "stroke-width": str(self.stroke_width),
+                "fill": "none",
+            },
+        )
+
+        # Draw vertical lines connecting each sibling to the sibship line
+        for sib in sibs_sorted:
+            ET.SubElement(
+                parent,
+                "line",
+                {
+                    "id": self._sid("sibship", "to", sib.id),
+                    "x1": str(sib.x),
+                    "y1": str(y),
+                    "x2": str(sib.x),
+                    "y2": str(sib.y - self.symbol_size / 2),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                },
+            )
+
     def _draw_person(self, parent: ET.Element, person: Person) -> None:
         # PowerPoint-friendly: avoid grouping; emit separate elements with ids.
         g = parent
@@ -834,11 +1010,17 @@ class PedigreeChart:
             add_text(cx + half + 10, cy + half - 2, "*", size=18, anchor="start")
 
         if "proband" in person.status or "consultand" in person.status:
-            start_x, start_y = cx - half - 34, cy + half + 26
-            end_x, end_y = cx - half * 0.75, cy + half * 0.75
+            # JOHBOC 図5: Short arrow at 45 degrees, P positioned below
+            arrow_length = 18.0  # Further shortened
+            # 45 degree angle: dx = dy
+            start_x = cx - half - arrow_length
+            start_y = cy + half + arrow_length
+            end_x = cx - half - 2
+            end_y = cy + half + 2
             self._draw_arrow(g, start_x, start_y, end_x, end_y, arrow_id=self._sid("arrow", person.id))
             if "proband" in person.status:
-                add_text(start_x + 6, start_y - 6, "P", size=14, anchor="start")
+                # Position P below the arrow start point
+                add_text(start_x, start_y + 10, "P", size=12, anchor="middle")
 
         # Multiple individuals represented by one symbol (JOHBOC 図2)
         count = getattr(person, "count", None)
@@ -860,8 +1042,9 @@ class PedigreeChart:
             add_line(right_x - cap, top_y, right_x, top_y, lid=self._sid("adopt", person.id, "RT"))
             add_line(right_x - cap, bot_y, right_x, bot_y, lid=self._sid("adopt", person.id, "RB"))
 
-        # Individual number is shown below or bottom-right (JOHBOC). Use bottom-right to avoid collisions.
-        add_text(cx + half + 8, cy + half + 4, person.id, size=10, anchor="start", klass="txt id")
+        # Individual number (JOHBOC 図5): Display number at top-right (left to right in each generation)
+        individual_number = str(person.display_number)
+        add_text(cx + half + 4, cy - half - 2, individual_number, size=10, anchor="start", klass="txt id", fill_color="#000")
 
         below: List[str] = []
         sex_at_birth = getattr(person, "sex_at_birth", None)
