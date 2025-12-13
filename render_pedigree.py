@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pedigree_drawer_lib_v0_1 import PedigreeChart
+from pedigree_drawer_lib_v0_2 import PedigreeChart
 
 
 def main() -> int:
@@ -27,4 +27,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
