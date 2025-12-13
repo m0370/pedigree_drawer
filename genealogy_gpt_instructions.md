@@ -138,7 +138,9 @@
 
 ```json
 {
-  "partners": ["I-1", "I-2"],
+  "partners": ["I-1", "I-2"],       // 配列の順序が配置順を決定（I-1が左、I-2が右）
+                                     // JOHBOC/Bennett 2022改訂版では性別による配置推奨は削除
+                                     // 夫婦の左右配置は任意（夫が左でも妻が左でも可）
   "type": "spouse",                 // "spouse", "consanguineous", "divorced"
   "children": ["II-1", "II-2"],
 

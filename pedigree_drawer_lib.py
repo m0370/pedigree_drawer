@@ -4,11 +4,15 @@ pedigree_drawer_lib.py (v0.5)
 Deterministic renderer: JSON (intermediate representation) -> SVG.
 
 Version History:
-- v0.5 (2025-12-13): JOHBOC図5完全準拠への改善
+- v0.5 (2025-12-13〜2025-12-14): JOHBOC図5完全準拠への改善
   - 個人番号を右上にアラビア数字のみで表示（図5準拠）
   - 兄弟間横線の位置を下げて親の情報と重ならないよう改善
   - 発端者マーカー（P+矢印）のレイアウト改善（重なり解消、矢印を短縮）
   - 凡例機能の追加（meta.show_legend: trueで有効化）
+  - 配偶者間隔の統一（spouse_gap: 36→80px、unit_gapと同じ）
+  - 保因者縦線の修正（未発症保因者のみに描画）
+  - 世代番号の命名規則明確化（親世代なし→発端者をI世代から開始）
+  - 左マージンの拡大（margin_x: 40→60px）
 - v0.4 (2025-12-13): 兄弟関係の描画改善とレイアウト最適化
   - 親がいない兄弟の線描画対応（sibship line）
   - relationshipsに"siblings"タイプを追加
@@ -119,7 +123,7 @@ class PedigreeChart:
 
         # Layout config (SVG px units)
         self.symbol_size = 40.0
-        self.spouse_gap = 36.0  # Increased from 24.0 to prevent text overlap
+        self.spouse_gap = 80.0  # Same as unit_gap for consistent spacing (increased from 36.0)
         self.unit_gap = 80.0     # Increased from 52.0 to prevent text overlap
         self.gen_gap = 120.0
         self.margin_x = 60.0     # Increased from 40.0 to provide more space between generation labels and symbols
