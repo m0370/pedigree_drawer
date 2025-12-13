@@ -92,6 +92,7 @@ Code Interpreter を使用して描画する際は、以下の「家系図記載
     {
       "id": "I-1",
       "gender": "M", // "M"=Male, "F"=Female, "U"=Unknown
+      "sex_at_birth": "AMAB", // optional: "AMAB" / "AFAB" / "UAAB" (JOHBOC 2022/2024). Omit for cisgender when not needed.
       "status": ["deceased", "affected"], 
       // status values: "affected", "deceased", "proband" (発端者), "consultand" (来談者), 
       // "pregnancy", "miscarriage" (自然流産), "abortion" (人工中絶)
@@ -138,6 +139,7 @@ chart.render_and_save('/mnt/data/pedigree_chart.svg')
 2.  **プレビュー**: 必要に応じて生成された `.svg` を開いて確認します（draw.io / ブラウザ等）。
 3.  **ダウンロードリンクの提供**: 生成された `.svg` ファイルへのダウンロードリンクを必ず会話の最後に出力してください。
     *   ファイル名例: `pedigree_chart_YYYYMMDD.svg`
+4. Draw the chart using the pedigree_drawer_lib.py library uploaded in Knowledge. Do NOT write your own drawing code from scratch. （Knowledgeにある pedigree_drawer_lib.py ライブラリを使って描画してください。ゼロから描画コードを書かないでください。）
 
 ## 補足: スクリプトでのSVG出力実装例
 Knowledge の `pedigree_drawer_lib_v0_1.py`（互換エイリアス）/ `pedigree_drawer_lib.py` を使用してください。
