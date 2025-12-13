@@ -1,10 +1,10 @@
-# 🧬 遺伝学的家系図作成 GPTs (v0.2)
+# 🧬 遺伝学的家系図作成 GPTs (v0.3)
 
-JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガイドライン（**Bennett 2022年改訂版**準拠）に基づいた、遺伝診療用家系図（Genogram/Pedigree Chart）を作成するための ChatGPT (GPTs) 用アセットです。
+JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガイドライン（**Bennett 2022年改訂版**、**図5記載例準拠**）に基づいた、遺伝診療用家系図（Genogram/Pedigree Chart）を作成するための ChatGPT (GPTs) 用アセットです。
 
 > [!WARNING]
 > **⚠️ 開発中 (Beta) ⚠️**
-> 本プロジェクトは現在 **v0.2 (ベータ版)** です。
+> 本プロジェクトは現在 **v0.3 (ベータ版)** です。
 > 研究・開発目的で公開されており、**臨床現場での実運用にはまだ達していません。**
 > 生成された家系図の正確性を保証するものではなく、使用に伴う責任は負いかねます。必ず専門家の確認を併用してください。
 
@@ -17,8 +17,9 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 
 ## ファイル構成
 *   `genealogy_gpt_instructions.md`: GPTs の "Instructions" に設定するプロンプト。
-*   `pedigree_drawer_lib_v0_2.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python)。
+*   `pedigree_drawer_lib.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python, v0.3)。
 *   `render_pedigree.py`: ローカル環境でJSONからSVGを生成するCLIツール（オプション）。
+*   `JSON_SCHEMA.md`: JSON中間表現の完全仕様 (v0.3)。
 *   `開発ログ/`: 開発経緯の記録。
 *   `家系図の描き方/`: JOHBOC家系図記載法などの参考資料。
 
@@ -27,7 +28,7 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 1. **ChatGPT** で「Explore GPTs」→「+ Create」を選択。
 2. **Configure** タブを開く。
 3. **Instructions** 欄に `genealogy_gpt_instructions.md` の内容をすべて貼り付ける。
-4. **Knowledge** の「Upload files」から `pedigree_drawer_lib_v0_2.py` をアップロードする。
+4. **Knowledge** の「Upload files」から `pedigree_drawer_lib.py` をアップロードする。
 5. **Capabilities** で「Code Interpreter」のみを ON にする（Web Browsing, DALL-E は OFF）。
 6. 保存して使用開始。
 
@@ -38,9 +39,9 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 python3 render_pedigree.py input.json -o pedigree.svg
 ```
 
-## 主な機能と制約 (v0.2)
+## 主な機能と制約 (v0.3)
 
-### 対応している記号・機能（JOHBOC/Bennett 2022準拠）
+### 対応している記号・機能（JOHBOC/Bennett 2022準拠、図5記載例準拠）
 *   ✅ ジェンダー記号（□男性, ○女性, ◇性別不明/多様）
 *   ✅ セックスとジェンダー区別（AMAB/AFAB/UAAB表記対応）
 *   ✅ 発端者 (P↗) / 来談者 (↗)
@@ -49,10 +50,12 @@ python3 render_pedigree.py input.json -o pedigree.svg
 *   ✅ 無症状変異保有者 (縦線) / 記録確認済み (*)
 *   ✅ 関係線: 婚姻, 近親婚(二重線), 離婚(//)
 *   ✅ 世代表示（ローマ数字）、個体番号（I-1, II-2等）
-*   ✅ メタデータ（作成日、作成者）
+*   ✅ メタデータ（作成日のみ表示、図5記載例準拠）
 *   ✅ 複数個体の一括表記（記号内に数字表示、例：□内に「5」= 5人の男性）
-*   ✅ 診断時年齢の記録（`diagnoses[]`配列による複数疾患対応）
-*   ✅ 遺伝学的検査情報、双生児、養子、生殖補助技術（JSON v0.2スキーマで対応）
+*   ✅ **年齢表記の単位サフィックス**（56y, 3m, 10d等、図5記載例準拠）
+*   ✅ **診断時年齢と疾患名の記録**（例：「54y 直腸癌」、遺伝性腫瘍評価に重要）
+*   ✅ **既往歴・手術歴の記録**（年齢不明の疾患名のみ記載、例：「脳血管疾患」）
+*   ✅ 遺伝学的検査情報、双生児、養子、生殖補助技術（JSON v0.3スキーマで対応）
 
 ### 現状の制約 (Limitations)
 *   **レイアウト**: 簡易的な自動配置アルゴリズムのため、複雑な多世代・多人数家系では線が重なる場合があります。
@@ -61,7 +64,7 @@ python3 render_pedigree.py input.json -o pedigree.svg
 
 ### JOHBOC準拠要素のうち未対応の事項（将来的な改良予定）
 
-以下のJOHBOC家系図記載法で定義されている要素は、現在のJSON v0.2スキーマでは未対応です：
+以下のJOHBOC家系図記載法で定義されている要素は、現在のJSON v0.3スキーマでは未対応です：
 
 **優先度: 中**
 *   ⚠️ **異所性妊娠（ECT）**: 妊娠関連イベントの一種として、JSON schema への明示的なフィールド追加が必要

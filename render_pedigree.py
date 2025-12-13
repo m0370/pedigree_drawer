@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pedigree_drawer_lib_v0_2 import PedigreeChart
+from pedigree_drawer_lib import PedigreeChart
 
 
 def main() -> int:
