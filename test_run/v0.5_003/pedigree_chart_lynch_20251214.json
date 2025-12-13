@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "date": "2025-12-14"
+  },
+  "individuals": [
+    {
+      "id": "II-2",
+      "gender": "M",
+      "current_age": "50",
+      "status": ["affected", "proband", "carrier"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        },
+        {
+          "condition": "胃癌",
+          "age_at_diagnosis": "35"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "result": "Lynch症候群 関連遺伝子変異"
+      }
+    },
+    {
+      "id": "II-1",
+      "gender": "F",
+      "medical_notes": [
+        "前妻（詳細不明）"
+      ]
+    },
+    {
+      "id": "III-1",
+      "gender": "M",
+      "current_age": "22",
+      "status": ["affected", "carrier"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "result": "Lynch症候群 関連遺伝子変異"
+      }
+    },
+    {
+      "id": "III-2",
+      "gender": "M",
+      "current_age": "19",
+      "status": ["carrier"],
+      "genetic_testing": {
+        "tested": true,
+        "result": "Lynch症候群 関連遺伝子変異"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "partners": ["II-1", "II-2"],
+      "type": "divorced",
+      "children": ["III-1", "III-2"]
+    }
+  ]
+}

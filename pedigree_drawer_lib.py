@@ -1003,8 +1003,9 @@ class PedigreeChart:
         if "deceased" in person.status or "stillbirth" in person.status:
             add_line(cx - half - 6, cy + half + 6, cx + half + 6, cy - half - 6, lid=self._sid("deceased", person.id))  # "/"
 
-        if "presymptomatic_carrier" in person.status or "carrier" in person.status:
-            add_line(cx, cy - half, cx, cy + half, lid=self._sid("carrier", person.id), stroke_color="#fff" if is_affected else "#000")
+        # Vertical line only for UNAFFECTED carriers (未発症の保因者のみ)
+        if ("presymptomatic_carrier" in person.status or "carrier" in person.status) and not is_affected:
+            add_line(cx, cy - half, cx, cy + half, lid=self._sid("carrier", person.id), stroke_color="#000")
 
         if "verified" in person.status:
             add_text(cx + half + 10, cy + half - 2, "*", size=18, anchor="start")
