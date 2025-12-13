@@ -1,0 +1,361 @@
+1. 本人は50歳男性で、22歳で大腸癌、35歳で胃癌の既往があります。
+2. この人にはむかし離婚した妻がおり、その前妻との間に22歳と19歳の息子がいますが、今回22歳の息子に大腸癌が判明しました。19歳の息子は特に疾病歴はありません。
+3. 遺伝性腫瘍の可能性があるため遺伝子検査を行ったところ、この50歳男性と2人の息子の3人が全員、リンチ症候群の遺伝子変異保有者であることが判明しました。
+
+別の家系図を作成しました。
+
+👉 pedigree_chart_lynch_20251213.svg をダウンロード
+
+今回の家系図で反映した内容（確認）
+
+発端者（本人）
+
+50歳男性
+
+22歳：大腸癌、35歳：胃癌
+
+遺伝学的検査：リンチ症候群の遺伝子変異保有（proband表示）
+
+前妻
+
+離婚関係として記載
+
+子ども（前妻との間）
+
+長男：22歳、22歳時に大腸癌発症、リンチ症候群変異保有
+
+次男：19歳、がん既往なし、リンチ症候群変異保有
+
+※ 両親や兄弟姉妹の情報は提示されていなかったため、今回は記載していません。
+
+次に進む前に確認させてください：
+
+使用した JSON中間表現を表示 しますか？
+
+両親・兄弟姉妹、あるいは発症していないがサーベイランス対象となる家族を追加しますか？
+
+遺伝子名（例：MLH1, MSH2, MSH6, PMS2 など）が分かっていれば追記できます。
+
+修正・追加があれば、全体を整理し直して家系図を再生成します。
+
+JSON表示して
+
+了解しました。
+今回作成した 家系図のJSON中間表現 をそのまま表示します。
+
+{
+  "meta": {
+    "date": "2025-12-13"
+  },
+  "individuals": [
+    {
+      "id": "II-1",
+      "gender": "M",
+      "current_age": "50",
+      "status": ["affected", "proband"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        },
+        {
+          "condition": "胃癌",
+          "age_at_diagnosis": "35"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "result": "リンチ症候群 遺伝子変異保有"
+      }
+    },
+    {
+      "id": "II-2",
+      "gender": "F"
+    },
+    {
+      "id": "III-1",
+      "gender": "M",
+      "current_age": "22",
+      "status": ["affected"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "result": "リンチ症候群 遺伝子変異保有"
+      }
+    },
+    {
+      "id": "III-2",
+      "gender": "M",
+      "current_age": "19",
+      "genetic_testing": {
+        "tested": true,
+        "result": "リンチ症候群 遺伝子変異保有"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "partners": ["II-1", "II-2"],
+      "type": "divorced",
+      "children": ["III-1", "III-2"]
+    }
+  ]
+}
+
+確認ポイント（重要）
+
+⭐ 診断時年齢
+
+本人：大腸癌22歳、胃癌35歳
+
+長男：大腸癌22歳
+
+⭐ 遺伝学的検査結果
+
+本人・長男・次男の3人すべてを
+リンチ症候群の変異保有者として明示
+
+離婚関係は type: "divorced" で表現
+
+修正や追加（例：
+
+遺伝子名 MLH1 / MSH2 / MSH6 / PMS2 の明示
+
+両親・兄弟姉妹の追加
+
+「無症状変異保有者」表現への変更）
+があれば教えてください。全体を再整理して家系図を再生成します。
+
+検査の結果、MSH2の変異だと判明しました。
+
+更新情報（MSH2変異）を反映して、家系図を作り直しました。
+
+👉 pedigree_chart_lynch_MSH2_20251213.svg をダウンロード
+
+反映内容（重要）
+
+発端者（50歳男性）
+
+22歳：大腸癌
+
+35歳：胃癌
+
+遺伝学的検査：リンチ症候群／MSH2 病的変異
+
+長男（22歳）
+
+22歳：大腸癌
+
+MSH2 病的変異
+
+次男（19歳）
+
+がん既往なし
+
+MSH2 病的変異（無症状変異保有者）
+
+前妻との離婚関係を明示
+
+使用したJSON中間表現
+{
+  "meta": {
+    "date": "2025-12-13"
+  },
+  "individuals": [
+    {
+      "id": "II-1",
+      "gender": "M",
+      "current_age": "50",
+      "status": ["affected", "proband"],
+      "diagnoses": [
+        { "condition": "大腸癌", "age_at_diagnosis": "22" },
+        { "condition": "胃癌", "age_at_diagnosis": "35" }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    },
+    {
+      "id": "II-2",
+      "gender": "F"
+    },
+    {
+      "id": "III-1",
+      "gender": "M",
+      "current_age": "22",
+      "status": ["affected"],
+      "diagnoses": [
+        { "condition": "大腸癌", "age_at_diagnosis": "22" }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    },
+    {
+      "id": "III-2",
+      "gender": "M",
+      "current_age": "19",
+      "status": ["carrier"],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "partners": ["II-1", "II-2"],
+      "type": "divorced",
+      "children": ["III-1", "III-2"]
+    }
+  ]
+}
+
+
+修正したい点はありますか？
+（例：両親・兄弟姉妹の追加、サーベイランス目的の未発症家族の追加、がんの病理情報や治療状況の追記 など）
+
+19歳の息子には未発症保因者の印を付けないのですか？
+
+とても重要なご指摘です。
+はい、本来は付けるべきです。
+先ほどの図では説明が不足していました。失礼しました。
+
+結論
+
+19歳の息子さんは「未発症変異保有者（carrier）」として表示するのが正しいため、
+JOHBOC準拠で 記号内に縦線（│） を入れて修正しました。
+
+👉 pedigree_chart_lynch_MSH2_carrier_20251213.svg をダウンロード
+
+表記ルールの整理（JOHBOC準拠）
+
+黒塗り：発症者（affected）
+
+縦線（│）：
+
+病的変異あり
+
+現時点で未発症
+→ 典型例が今回の 19歳・MSH2変異保有者
+
+今回の家族への適用
+個体	状態	表示
+本人（50歳）	発症＋変異保有	黒塗り
+長男（22歳）	発症＋変異保有	黒塗り
+次男（19歳）	未発症＋変異保有	縦線（carrier）
+
+この表現により、
+
+発症歴がないがサーベイランスが必須
+
+遺伝性腫瘍症候群の浸透率評価
+が一目で分かる、臨床的に非常に重要な家系図になります。
+
+次に考えられる追加（任意）
+
+両親の情報追加 → de novo か家系内遺伝かの評価
+
+将来用に
+
+「大腸内視鏡開始年齢」
+
+「上部消化管サーベイランス」
+を注記として残す
+
+他にも修正・追加したい点があれば教えてください。
+
+JSON
+
+了解しました。
+**修正後（19歳の息子＝未発症変異保有者［carrier］を明示）**の
+最新JSON中間表現をそのまま表示します。
+
+{
+  "meta": {
+    "date": "2025-12-13"
+  },
+  "individuals": [
+    {
+      "id": "II-1",
+      "gender": "M",
+      "current_age": "50",
+      "status": ["affected", "proband"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        },
+        {
+          "condition": "胃癌",
+          "age_at_diagnosis": "35"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    },
+    {
+      "id": "II-2",
+      "gender": "F"
+    },
+    {
+      "id": "III-1",
+      "gender": "M",
+      "current_age": "22",
+      "status": ["affected"],
+      "diagnoses": [
+        {
+          "condition": "大腸癌",
+          "age_at_diagnosis": "22"
+        }
+      ],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    },
+    {
+      "id": "III-2",
+      "gender": "M",
+      "current_age": "19",
+      "status": ["carrier"],
+      "genetic_testing": {
+        "tested": true,
+        "test_type": "Lynch syndrome panel",
+        "result": "MSH2 pathogenic variant"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "partners": ["II-1", "II-2"],
+      "type": "divorced",
+      "children": ["III-1", "III-2"]
+    }
+  ]
+}
+
+補足（確認）
+
+status: ["carrier"]
+→ JOHBOC準拠：未発症・病的変異保有者（縦線表示）
+
+発症者（本人・22歳息子）は affected
+
+遺伝子名 MSH2 を全員に明示
+
+他に修正（例：両親追加、サーベイランス注記、将来の発症時更新）があれば、全体を再生成します。
