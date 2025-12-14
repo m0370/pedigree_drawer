@@ -88,8 +88,8 @@
     "author": "Dr. Tanaka",         // 作成者（推奨）
     "indication": "家族性乳がん評価", // 適応（任意）
     "historian": "本人（発端者）",   // 情報提供者（任意）
-    "show_legend": true,            // 凡例を表示（任意）
-    "legend_conditions": ["乳癌", "白血病"] // 疾患別の塗り分け凡例（任意、図2/図5）
+    "show_legend": false,           // 凡例を表示（任意、デフォルト: false）
+    "legend_conditions": ["乳癌", "白血病"] // 疾患別の塗り分け凡例（任意、図2/図5、指定時のみ塗り分け）
   }
 }
 ```
