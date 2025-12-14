@@ -199,6 +199,23 @@
 }
 ```
 
+### 図2（複数疾患）の塗り分け＋凡例（任意）
+
+複数の疾患を区別して塗り分けしたい場合（JOHBOC 図2「罹患者（二つ以上の疾患）」など）は、`meta.legend_conditions` を使用します。
+
+```json
+{
+  "meta": {
+    "date": "2025-12-14",
+    "show_legend": true,
+    "legend_conditions": ["乳癌", "白血病"]
+  }
+}
+```
+
+- `legend_conditions` に含まれる疾患名に一致する罹患者は、疾患別に塗り分けされます
+- 同一人物が `legend_conditions` に含まれる疾患を2つ以上もつ場合、記号を左右に分割して表現します
+
 ## 5. Code Interpreter 実装
 
 Pythonで描画する際は、**Knowledgeの `pedigree_drawer_lib.py` をインポート**して使用してください。
