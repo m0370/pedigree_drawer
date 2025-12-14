@@ -54,6 +54,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+import re
 from typing import Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
@@ -95,6 +96,14 @@ def _canonical_condition(condition: str) -> str:
     if "白血病" in c:
         return "白血病"
     return c
+
+
+def _normalize_age_notation(s: str) -> str:
+    """Normalize Japanese age notation in free text (e.g., '37歳' -> '37y') for consistency."""
+    if not s:
+        return s
+    # Convert '37歳'/'37才' and variants like '37 歳' to '37y'
+    return re.sub(r"(\d+)\s*(歳|才)", r"\1y", str(s))
 
 
 @dataclass
@@ -649,6 +658,15 @@ class PedigreeChart:
         ys = [p.y for p in self.people.values()]
         max_x = max(xs) + self.margin_x + self.symbol_size
         max_y = max(ys) + self.margin_y + self.symbol_size + 80
+        # Reserve vertical space for legend so it won't overlap the pedigree.
+        if self.show_legend:
+            line_height = 18.0
+            base_items = 1 + 4  # title + default legend items
+            cond_items = 0
+            if self.legend_conditions:
+                cond_items = 1 + len(self.legend_conditions)  # conditions title + swatches
+            reserved = 10.0 + line_height * (base_items + cond_items) + 10.0
+            max_y += reserved
         return (int(max_x), int(max_y))
 
     def _draw_generation_labels(self, parent: ET.Element) -> None:
@@ -1424,7 +1442,7 @@ class PedigreeChart:
         # Add medical notes (JOHBOC standard: "脳血管疾患")
         for note_item in person.medical_notes:
             if isinstance(note_item, str) and note_item.strip():
-                below.append(note_item.strip())
+                below.append(_normalize_age_notation(note_item.strip()))
 
         if note:
             below.extend(_wrap_text(note, 18))
