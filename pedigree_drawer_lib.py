@@ -86,6 +86,17 @@ def _wrap_text(s: str, max_chars: int) -> List[str]:
     return [s[i : i + max_chars] for i in range(0, len(s), max_chars)]
 
 
+def _canonical_condition(condition: str) -> str:
+    c = str(condition or "").strip()
+    if not c:
+        return ""
+    if "乳癌" in c:
+        return "乳癌"
+    if "白血病" in c:
+        return "白血病"
+    return c
+
+
 @dataclass
 class Person:
     id: str
@@ -144,6 +155,8 @@ class PedigreeChart:
         # - arrow markers are avoided (use explicit polygons).
         self.output_profile = "powerpoint"  # "powerpoint" | "generic"
         self.show_legend = False  # Set to True to display legend (for complex pedigrees with multiple conditions)
+        self.legend_conditions: List[str] = []
+        self._condition_fill: Dict[str, str] = {}
 
     def load_from_json(self, data: dict) -> None:
         self.people.clear()
@@ -154,6 +167,8 @@ class PedigreeChart:
 
         # Enable legend if specified in meta or if multiple disease types are present
         self.show_legend = self._meta.get("show_legend", False)
+        self.legend_conditions = []
+        self._condition_fill = {}
 
         individuals = (data or {}).get("individuals") or []
         donors_surrogates = (data or {}).get("donors_surrogates") or []
@@ -267,6 +282,32 @@ class PedigreeChart:
                         "label": p_data.get("label"),
                     },
                 )
+
+        # Decide which conditions should have distinct fills (JOHBOC 図2: condition legend and split fills).
+        conditions_in_chart: List[str] = []
+        for person in self.people.values():
+            for dx in person.diagnoses:
+                if isinstance(dx, dict):
+                    key = _canonical_condition(dx.get("condition"))
+                    if key:
+                        conditions_in_chart.append(key)
+        unique_conditions = sorted(set(conditions_in_chart))
+
+        meta_legend_conditions = self._meta.get("legend_conditions")
+        if isinstance(meta_legend_conditions, list):
+            self.legend_conditions = [c for c in (_canonical_condition(x) for x in meta_legend_conditions) if c]
+        else:
+            # Default: enable the common requested set when present.
+            self.legend_conditions = [c for c in ("乳癌", "白血病") if c in unique_conditions]
+
+        # Enable legend automatically if we have condition fills to explain.
+        if self.legend_conditions:
+            self.show_legend = True
+
+        # Assign fills for legend conditions (PowerPoint-friendly solid fills).
+        default_fill = {"乳癌": "#000", "白血病": "#9a9a9a"}
+        for idx, cond in enumerate(self.legend_conditions):
+            self._condition_fill[cond] = default_fill.get(cond, "#555" if idx % 2 == 0 else "#aaa")
 
         relationships = (data or {}).get("relationships") or []
         for rel in relationships:
@@ -656,7 +697,6 @@ class PedigreeChart:
         """Draw legend for complex pedigrees (JOHBOC 図5)"""
         # Legend position: bottom-left
         start_x = 10.0
-        start_y = height - 120.0
         line_height = 18.0
         symbol_size = 12.0
 
@@ -666,6 +706,11 @@ class PedigreeChart:
             ("P", "発端者 (Proband)"),
             ("*", "記録確認済 (Verified)"),
         ]
+        # Dynamic start_y so the legend stays within the canvas even when condition legend is shown.
+        legend_lines = 1 + len(legend_items)
+        if self.legend_conditions:
+            legend_lines += 1 + len(self.legend_conditions)
+        start_y = height - (10.0 + line_height * legend_lines)
 
         # Title
         t = ET.SubElement(
@@ -716,6 +761,55 @@ class PedigreeChart:
                 },
             )
             t_desc.text = description
+
+        # Condition legend (JOHBOC 図2): explain fills used for conditions of interest.
+        if self.legend_conditions:
+            base = len(legend_items) + 1
+            y0 = start_y + line_height * base
+            t2 = ET.SubElement(
+                parent,
+                "text",
+                {
+                    "id": "legend_conditions_title",
+                    "x": str(start_x),
+                    "y": str(y0),
+                    "font-size": "11",
+                    "font-weight": "bold",
+                    "font-family": self.font_family,
+                    "fill": "#000",
+                },
+            )
+            t2.text = "疾患 (Conditions)"
+            for j, cond in enumerate(self.legend_conditions):
+                y = y0 + line_height * (j + 1)
+                fill = self._condition_fill.get(cond, "#777")
+                ET.SubElement(
+                    parent,
+                    "rect",
+                    {
+                        "id": f"legend_cond_swatch_{j}",
+                        "x": str(start_x),
+                        "y": str(y - symbol_size + 2),
+                        "width": str(symbol_size),
+                        "height": str(symbol_size),
+                        "fill": fill,
+                        "stroke": "#000",
+                        "stroke-width": "1",
+                    },
+                )
+                t_desc = ET.SubElement(
+                    parent,
+                    "text",
+                    {
+                        "id": f"legend_cond_text_{j}",
+                        "x": str(start_x + symbol_size + 8),
+                        "y": str(y),
+                        "font-size": "10",
+                        "font-family": self.font_family,
+                        "fill": "#666",
+                    },
+                )
+                t_desc.text = cond
 
     def _draw_spouse_line(self, parent: ET.Element, p1: Person, p2: Person, rel_type: str) -> None:
         if p1.generation != p2.generation:
@@ -1103,7 +1197,7 @@ class PedigreeChart:
         stroke = {"stroke": "#000", "stroke-width": str(self.stroke_width)}
 
         is_affected = "affected" in person.status
-        fill = "#000" if is_affected else "none"
+        fill = self._fill_for_person(person) if is_affected else "none"
 
         def add_line(
             x1: float,
@@ -1197,13 +1291,13 @@ class PedigreeChart:
                 )
         elif "stillbirth" in person.status:
             # Stillbirth: sex symbol (if known) with "/" slash and SB below.
-            self._draw_gender_symbol(g, person.gender, cx, cy, fill=fill, stroke=stroke)
+            self._draw_person_symbol(g, person, cx, cy, stroke=stroke, is_affected=is_affected)
         elif "pregnancy" in person.status:
-            self._draw_gender_symbol(g, person.gender, cx, cy, fill=fill, stroke=stroke)
+            self._draw_person_symbol(g, person, cx, cy, stroke=stroke, is_affected=is_affected)
             # For affected fetus pregnancy, the symbol is filled; keep "P" visible.
             add_text(cx, cy + 4, "P", size=14, fill_color="#fff" if is_affected else "#000")
         else:
-            self._draw_gender_symbol(g, person.gender, cx, cy, fill=fill, stroke=stroke)
+            self._draw_person_symbol(g, person, cx, cy, stroke=stroke, is_affected=is_affected)
 
         # Donor / surrogate markers (JOHBOC 図2/図3; simplified)
         if "donor" in person.status:
@@ -1388,6 +1482,99 @@ class PedigreeChart:
                     "stroke-width": str(self.stroke_width),
                 },
             )
+
+    def _fill_for_person(self, person: Person) -> str:
+        """Return a solid fill color for an affected person (used for non-sex-symbol shapes, e.g., pregnancy loss triangle)."""
+        if not self.legend_conditions:
+            return "#000"
+        for dx in person.diagnoses:
+            if isinstance(dx, dict):
+                key = _canonical_condition(dx.get("condition"))
+                if key and key in self.legend_conditions:
+                    return self._condition_fill.get(key, "#000")
+        return "#000"
+
+    def _draw_person_symbol(self, parent: ET.Element, person: Person, cx: float, cy: float, *, stroke: dict, is_affected: bool) -> None:
+        """Draw sex symbol with JOHBOC 図2-style condition fills (incl. split for 2+ conditions)."""
+        s = self.symbol_size
+        half = s / 2
+        gender = (person.gender or "U").upper()
+
+        if not is_affected or not self.legend_conditions:
+            self._draw_gender_symbol(parent, gender, cx, cy, fill="#000" if is_affected else "none", stroke=stroke)
+            return
+
+        conds: List[str] = []
+        for dx in person.diagnoses:
+            if isinstance(dx, dict):
+                key = _canonical_condition(dx.get("condition"))
+                if key and key in self.legend_conditions and key not in conds:
+                    conds.append(key)
+
+        if not conds:
+            self._draw_gender_symbol(parent, gender, cx, cy, fill="#000", stroke=stroke)
+            return
+
+        if len(conds) == 1:
+            self._draw_gender_symbol(parent, gender, cx, cy, fill=self._condition_fill.get(conds[0], "#000"), stroke=stroke)
+            return
+
+        left_fill = self._condition_fill.get(conds[0], "#000")
+        right_fill = self._condition_fill.get(conds[1], "#9a9a9a")
+
+        if gender == "M":
+            ET.SubElement(
+                parent,
+                "rect",
+                {
+                    "id": self._sid("fill", person.id, "L"),
+                    "x": str(cx - half),
+                    "y": str(cy - half),
+                    "width": str(half),
+                    "height": str(s),
+                    "fill": left_fill,
+                    "stroke": "none",
+                },
+            )
+            ET.SubElement(
+                parent,
+                "rect",
+                {
+                    "id": self._sid("fill", person.id, "R"),
+                    "x": str(cx),
+                    "y": str(cy - half),
+                    "width": str(half),
+                    "height": str(s),
+                    "fill": right_fill,
+                    "stroke": "none",
+                },
+            )
+            self._draw_gender_symbol(parent, gender, cx, cy, fill="none", stroke=stroke)
+            return
+
+        if gender == "F":
+            r = half
+            left_path = f"M {cx},{cy-r} A {r},{r} 0 0 0 {cx},{cy+r} L {cx},{cy-r} Z"
+            ET.SubElement(parent, "path", {"id": self._sid("fill", person.id, "L"), "d": left_path, "fill": left_fill, "stroke": "none"})
+            right_path = f"M {cx},{cy-r} A {r},{r} 0 0 1 {cx},{cy+r} L {cx},{cy-r} Z"
+            ET.SubElement(parent, "path", {"id": self._sid("fill", person.id, "R"), "d": right_path, "fill": right_fill, "stroke": "none"})
+            self._draw_gender_symbol(parent, gender, cx, cy, fill="none", stroke=stroke)
+            return
+
+        points = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
+        left_tri = [points[0], points[3], points[2]]
+        right_tri = [points[0], points[1], points[2]]
+        ET.SubElement(
+            parent,
+            "polygon",
+            {"id": self._sid("fill", person.id, "L"), "points": " ".join(f"{x},{y}" for x, y in left_tri), "fill": left_fill, "stroke": "none"},
+        )
+        ET.SubElement(
+            parent,
+            "polygon",
+            {"id": self._sid("fill", person.id, "R"), "points": " ".join(f"{x},{y}" for x, y in right_tri), "fill": right_fill, "stroke": "none"},
+        )
+        self._draw_gender_symbol(parent, gender, cx, cy, fill="none", stroke=stroke)
 
     def _draw_arrow(self, parent: ET.Element, x1: float, y1: float, x2: float, y2: float, *, arrow_id: str) -> None:
         # PowerPoint-friendly arrow: a line + explicit triangle head.
