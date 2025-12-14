@@ -296,6 +296,20 @@ class PedigreeChart:
                     },
                 )
 
+        # Auto-mark affected if diagnoses are present (common authoring omission).
+        # Keep mutual exclusion: do not add affected to carriers or pregnancy-loss symbols.
+        for person in self.people.values():
+            if not person.diagnoses:
+                continue
+            st = set(person.status or [])
+            if "affected" in st:
+                continue
+            if st.intersection({"carrier", "presymptomatic_carrier"}):
+                continue
+            if st.intersection({"miscarriage", "abortion", "stillbirth"}):
+                continue
+            person.status = list(person.status or []) + ["affected"]
+
         # Condition fills are opt-in via meta.legend_conditions (JOHBOC 図2: condition legend and split fills).
         meta_legend_conditions = self._meta.get("legend_conditions")
         if isinstance(meta_legend_conditions, list):
