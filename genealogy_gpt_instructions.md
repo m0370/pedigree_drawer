@@ -37,7 +37,7 @@
   - この `result` は**個体記号の下（検査情報欄）に表示**されるので、短く明確に書く
 
 ### E. 図2（複数疾患）の塗り分け＋凡例（任意）
-- `meta.legend_conditions: ["乳癌","白血病"]` を指定すると、該当疾患の罹患者を**疾患別に塗り分け**し、凡例に表示します
+- `meta.show_legend: true` と `meta.legend_conditions: ["乳癌","白血病"]` を指定すると、該当疾患の罹患者を**疾患別に塗り分け**し、凡例に表示します
 - 同一人物が `legend_conditions` に含まれる疾患を2つ以上もつ場合、記号を左右に分割して表現します（図2「罹患者（二つ以上の疾患）」）
 
 ※完全仕様・詳細な例は Knowledge の `JSON_SCHEMA.md` と `genealogy_gpt_instructions_full.md` を参照（この指示には全文を載せない）。

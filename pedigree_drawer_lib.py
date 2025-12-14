@@ -174,8 +174,8 @@ class PedigreeChart:
         self._input_order.clear()
         self._meta = dict((data or {}).get("meta") or {})
 
-        # Enable legend if specified in meta or if multiple disease types are present
-        self.show_legend = self._meta.get("show_legend", False)
+        # Legend is opt-in (default OFF)
+        self.show_legend = bool(self._meta.get("show_legend", False))
         self.legend_conditions = []
         self._condition_fill = {}
 
@@ -292,26 +292,10 @@ class PedigreeChart:
                     },
                 )
 
-        # Decide which conditions should have distinct fills (JOHBOC 図2: condition legend and split fills).
-        conditions_in_chart: List[str] = []
-        for person in self.people.values():
-            for dx in person.diagnoses:
-                if isinstance(dx, dict):
-                    key = _canonical_condition(dx.get("condition"))
-                    if key:
-                        conditions_in_chart.append(key)
-        unique_conditions = sorted(set(conditions_in_chart))
-
+        # Condition fills are opt-in via meta.legend_conditions (JOHBOC 図2: condition legend and split fills).
         meta_legend_conditions = self._meta.get("legend_conditions")
         if isinstance(meta_legend_conditions, list):
             self.legend_conditions = [c for c in (_canonical_condition(x) for x in meta_legend_conditions) if c]
-        else:
-            # Default: enable the common requested set when present.
-            self.legend_conditions = [c for c in ("乳癌", "白血病") if c in unique_conditions]
-
-        # Enable legend automatically if we have condition fills to explain.
-        if self.legend_conditions:
-            self.show_legend = True
 
         # Assign fills for legend conditions (PowerPoint-friendly solid fills).
         default_fill = {"乳癌": "#000", "白血病": "#9a9a9a"}
