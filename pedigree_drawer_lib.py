@@ -1,9 +1,13 @@
 """
-pedigree_drawer_lib.py (v0.6)
+pedigree_drawer_lib.py (v0.7)
 
 Deterministic renderer: JSON (intermediate representation) -> SVG.
 
 Version History:
+- v0.7 (2025-12-14): Multi-condition fills + legend controls + normalization
+  - 図2の「複数疾患」塗り分け（乳癌/白血病/その他の腫瘍）と左右分割表現
+  - 凡例制御の分離（show_legend / show_conditions_legend）
+  - medical_notesの年齢表記（37歳→37y）正規化
 - v0.6 (2025-12-14): Genetic testing display + relationship guidance
   - 遺伝学的検査結果（genetic_testing.result / display）の描画に対応（個体記号の下に表示）
 - v0.5 (2025-12-13〜2025-12-14): JOHBOC図5完全準拠への改善

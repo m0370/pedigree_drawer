@@ -1,10 +1,10 @@
-# 🧬 遺伝学的家系図作成 GPTs (v0.6)
+# 🧬 遺伝学的家系図作成 GPTs (v0.7)
 
 JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガイドライン（**Bennett 2022年改訂版**、**図5記載例準拠**）に基づいた、遺伝診療用家系図（Genogram/Pedigree Chart）を作成するための ChatGPT (GPTs) 用アセットです。
 
 > [!WARNING]
 > **⚠️ 開発中 (Beta) ⚠️**
-> 本プロジェクトは現在 **v0.6 (ベータ版)** です。
+> 本プロジェクトは現在 **v0.7 (ベータ版)** です。
 > 研究・開発目的で公開されており、**臨床現場での実運用にはまだ達していません。**
 > 生成された家系図の正確性を保証するものではなく、使用に伴う責任は負いかねます。必ず専門家の確認を併用してください。
 
@@ -18,9 +18,9 @@ JOHBOC（日本遺伝性腫瘍学会）および日本人類遺伝学会のガ�
 ## ファイル構成
 *   `genealogy_gpt_instructions.md`: GPTs の "Instructions" に設定する指示（8000字以内）。
 *   `genealogy_gpt_instructions_full.md`: 指示のロング版（編集用・参照用）。
-*   `pedigree_drawer_lib.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python, v0.6)。
+*   `pedigree_drawer_lib.py`: GPTs の "Knowledge" にアップロードする描画エンジン (Python, v0.7)。
 *   `render_pedigree.py`: ローカル環境でJSONからSVGを生成するCLIツール（オプション）。
-*   `JSON_SCHEMA.md`: JSON中間表現の完全仕様 (v0.6)。
+*   `JSON_SCHEMA.md`: JSON中間表現の完全仕様 (v0.7)。
 *   `開発ログ/`: 開発経緯の記録。
 *   `家系図の描き方/`: JOHBOC家系図記載法などの参考資料。
 
@@ -50,9 +50,15 @@ python3 render_pedigree.py input.json -o pedigree.svg
 
 > **💡 ヒント**: 図形に変換することで、線の位置調整や不要な要素の削除など、細かな調整が簡単に行えます。
 
-## 主な機能と制約 (v0.6)
+## 主な機能と制約 (v0.7)
 
-### v0.6 新機能（2025-12-14）⭐最新
+### v0.7 新機能（2025-12-14）⭐最新
+*   ✅ **図2（複数疾患）塗り分け**: `meta.legend_conditions` で疾患別に塗り分け、同一人物の複数疾患は左右分割で表現
+*   ✅ **凡例の柔軟化**: `meta.show_legend`（汎用Legend）と `meta.show_conditions_legend`（Conditionsのみ）を分離して制御
+*   ✅ **表記統一**: `medical_notes` の `37歳/37才` 等を `37y` に正規化して表示
+*   ✅ **レイアウト安定化**: 片親＋一人っ子の縦線のズレを抑制、凡例表示時はキャンバスを拡張して重なりを回避
+
+### v0.6 新機能（2025-12-14）
 *   ✅ **遺伝学的検査結果の描画**: `individuals[].genetic_testing.result` を個体記号の下に表示（JOHBOC 図5の「検査情報」欄に相当）
 *   ✅ **親子線の取り扱い明確化**: `siblings` は「親が家系図に含まれない兄弟」の例外表現であり、親がいる場合は親子関係（夫婦/片親 + children）で表現する
 
