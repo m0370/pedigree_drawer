@@ -168,6 +168,7 @@ class PedigreeChart:
         # - arrow markers are avoided (use explicit polygons).
         self.output_profile = "powerpoint"  # "powerpoint" | "generic"
         self.show_legend = False  # Set to True to display legend (for complex pedigrees with multiple conditions)
+        self.show_conditions_legend = False
         self.legend_conditions: List[str] = []
         self._condition_fill: Dict[str, str] = {}
 
@@ -178,8 +179,9 @@ class PedigreeChart:
         self._input_order.clear()
         self._meta = dict((data or {}).get("meta") or {})
 
-        # Legend is opt-in (default OFF)
+        # Legends are opt-in (default OFF)
         self.show_legend = bool(self._meta.get("show_legend", False))
+        self.show_conditions_legend = bool(self._meta.get("show_conditions_legend", False))
         self.legend_conditions = []
         self._condition_fill = {}
 
@@ -314,6 +316,9 @@ class PedigreeChart:
         meta_legend_conditions = self._meta.get("legend_conditions")
         if isinstance(meta_legend_conditions, list):
             self.legend_conditions = [c for c in (_canonical_condition(x) for x in meta_legend_conditions) if c]
+        # If show_legend is enabled, show condition legend as well (backward-compatible behavior).
+        if self.show_legend and self.legend_conditions:
+            self.show_conditions_legend = True
 
         # Assign fills for legend conditions (PowerPoint-friendly solid fills).
         default_fill = {"乳癌": "#000", "白血病": "#9a9a9a", "その他の腫瘍": "#4c78a8"}
@@ -620,7 +625,7 @@ class PedigreeChart:
         self._draw_generation_labels(svg)
         self._draw_metadata(svg, width, height)
 
-        if self.show_legend:
+        if self.show_legend or (self.show_conditions_legend and self.legend_conditions):
             self._draw_legend(svg, width, height)
 
         for fam in self.families:
@@ -660,12 +665,14 @@ class PedigreeChart:
         ys = [p.y for p in self.people.values()]
         max_x = max(xs) + self.margin_x + self.symbol_size
         max_y = max(ys) + self.margin_y + self.symbol_size + 80
-        # Reserve vertical space for legend so it won't overlap the pedigree.
-        if self.show_legend:
+        # Reserve vertical space for legends so they won't overlap the pedigree.
+        if self.show_legend or (self.show_conditions_legend and self.legend_conditions):
             line_height = 18.0
-            base_items = 1 + 4  # title + default legend items
+            base_items = 0
+            if self.show_legend:
+                base_items += 1 + 4  # title + default legend items
             cond_items = 0
-            if self.legend_conditions:
+            if self.show_conditions_legend and self.legend_conditions:
                 cond_items = 1 + len(self.legend_conditions)  # conditions title + swatches
             reserved = 10.0 + line_height * (base_items + cond_items) + 10.0
             max_y += reserved
@@ -720,72 +727,78 @@ class PedigreeChart:
         line_height = 18.0
         symbol_size = 12.0
 
-        legend_items = [
-            ("■", "罹患者 (Affected)"),
-            ("／", "死亡 (Deceased)"),
-            ("P", "発端者 (Proband)"),
-            ("*", "記録確認済 (Verified)"),
-        ]
+        legend_items: List[Tuple[str, str]] = []
+        if self.show_legend:
+            legend_items = [
+                ("■", "罹患者 (Affected)"),
+                ("／", "死亡 (Deceased)"),
+                ("P", "発端者 (Proband)"),
+                ("*", "記録確認済 (Verified)"),
+            ]
+
         # Dynamic start_y so the legend stays within the canvas even when condition legend is shown.
-        legend_lines = 1 + len(legend_items)
-        if self.legend_conditions:
+        legend_lines = 0
+        if self.show_legend:
+            legend_lines += 1 + len(legend_items)
+        if self.show_conditions_legend and self.legend_conditions:
             legend_lines += 1 + len(self.legend_conditions)
         start_y = height - (10.0 + line_height * legend_lines)
 
-        # Title
-        t = ET.SubElement(
-            parent,
-            "text",
-            {
-                "id": "legend_title",
-                "x": str(start_x),
-                "y": str(start_y),
-                "font-size": "11",
-                "font-weight": "bold",
-                "font-family": self.font_family,
-                "fill": "#000",
-            },
-        )
-        t.text = "凡例 (Legend)"
-
-        # Legend items
-        for idx, (symbol, description) in enumerate(legend_items):
-            y = start_y + line_height * (idx + 1)
-
-            # Symbol
-            t_sym = ET.SubElement(
+        cur_y = start_y
+        if self.show_legend:
+            # Title
+            t = ET.SubElement(
                 parent,
                 "text",
                 {
-                    "id": f"legend_symbol_{idx}",
-                    "x": str(start_x + 5),
-                    "y": str(y),
-                    "font-size": "10",
+                    "id": "legend_title",
+                    "x": str(start_x),
+                    "y": str(cur_y),
+                    "font-size": "11",
+                    "font-weight": "bold",
                     "font-family": self.font_family,
                     "fill": "#000",
                 },
             )
-            t_sym.text = symbol
+            t.text = "凡例 (Legend)"
+            # Legend items
+            for idx, (symbol, description) in enumerate(legend_items):
+                y = cur_y + line_height * (idx + 1)
 
-            # Description
-            t_desc = ET.SubElement(
-                parent,
-                "text",
-                {
-                    "id": f"legend_desc_{idx}",
-                    "x": str(start_x + 25),
-                    "y": str(y),
-                    "font-size": "10",
-                    "font-family": self.font_family,
-                    "fill": "#666",
-                },
-            )
-            t_desc.text = description
+                # Symbol
+                t_sym = ET.SubElement(
+                    parent,
+                    "text",
+                    {
+                        "id": f"legend_symbol_{idx}",
+                        "x": str(start_x + 5),
+                        "y": str(y),
+                        "font-size": "10",
+                        "font-family": self.font_family,
+                        "fill": "#000",
+                    },
+                )
+                t_sym.text = symbol
+
+                # Description
+                t_desc = ET.SubElement(
+                    parent,
+                    "text",
+                    {
+                        "id": f"legend_desc_{idx}",
+                        "x": str(start_x + 25),
+                        "y": str(y),
+                        "font-size": "10",
+                        "font-family": self.font_family,
+                        "fill": "#666",
+                    },
+                )
+                t_desc.text = description
+            cur_y = cur_y + line_height * (len(legend_items) + 1)
 
         # Condition legend (JOHBOC 図2): explain fills used for conditions of interest.
-        if self.legend_conditions:
-            base = len(legend_items) + 1
-            y0 = start_y + line_height * base
+        if self.show_conditions_legend and self.legend_conditions:
+            y0 = cur_y
             t2 = ET.SubElement(
                 parent,
                 "text",
