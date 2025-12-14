@@ -95,6 +95,10 @@ def _canonical_condition(condition: str) -> str:
         return "乳癌"
     if "白血病" in c:
         return "白血病"
+    # For condition legends, group common "other tumors" under one bucket when desired.
+    # (User can include "その他の腫瘍" in meta.legend_conditions to enable a 3rd color.)
+    if "胃癌" in c or "骨肉腫" in c:
+        return "その他の腫瘍"
     return c
 
 
@@ -298,7 +302,7 @@ class PedigreeChart:
             self.legend_conditions = [c for c in (_canonical_condition(x) for x in meta_legend_conditions) if c]
 
         # Assign fills for legend conditions (PowerPoint-friendly solid fills).
-        default_fill = {"乳癌": "#000", "白血病": "#9a9a9a"}
+        default_fill = {"乳癌": "#000", "白血病": "#9a9a9a", "その他の腫瘍": "#4c78a8"}
         for idx, cond in enumerate(self.legend_conditions):
             self._condition_fill[cond] = default_fill.get(cond, "#555" if idx % 2 == 0 else "#aaa")
 
