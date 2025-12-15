@@ -58,6 +58,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+import copy
 import re
 from typing import Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
@@ -99,10 +100,6 @@ def _canonical_condition(condition: str) -> str:
         return "乳癌"
     if "白血病" in c:
         return "白血病"
-    # For condition legends, group common "other tumors" under one bucket when desired.
-    # (User can include "その他の腫瘍" in meta.legend_conditions to enable a 3rd color.)
-    if "胃癌" in c or "骨肉腫" in c:
-        return "その他の腫瘍"
     return c
 
 
@@ -126,6 +123,7 @@ class Person:
     medical_notes: List[str] = field(default_factory=list)
     genetic_testing: Optional[dict] = None
     name: Optional[str] = None
+    note: Optional[str] = None
     x: float = 0.0
     y: float = 0.0
     display_number: int = 0  # Individual number (left to right in each generation)
@@ -151,6 +149,7 @@ class PedigreeChart:
         self.families: List[Family] = []
         self.sibships: List[Sibship] = []
         self._input_order: Dict[str, int] = {}
+        self._layout_rank: Dict[str, int] = {}
         self._meta: Dict[str, str] = {}
 
         # Layout config (SVG px units)
@@ -175,12 +174,16 @@ class PedigreeChart:
         self.show_conditions_legend = False
         self.legend_conditions: List[str] = []
         self._condition_fill: Dict[str, str] = {}
+        # Layout: prioritize readability (reduce line crossings) over age/input order when possible.
+        self.optimize_layout_for_crossings = True
+        self.optimize_layout_max_iters = 6
 
     def load_from_json(self, data: dict) -> None:
         self.people.clear()
         self.families.clear()
         self.sibships.clear()
         self._input_order.clear()
+        self._layout_rank.clear()
         self._meta = dict((data or {}).get("meta") or {})
 
         # Legends are opt-in (default OFF)
@@ -234,6 +237,7 @@ class PedigreeChart:
                 medical_notes=medical_notes,
                 genetic_testing=dict(genetic_testing) if genetic_testing else None,
                 name=str(p_data.get("name")) if p_data.get("name") is not None else None,
+                note=str(p_data.get("notes") or p_data.get("note") or "").strip() or None,
             )
             # Optional (JOHBOC 2022/2024): AMAB/AFAB/UAAB etc.
             sex_at_birth = p_data.get("sex_at_birth")
@@ -378,6 +382,113 @@ class PedigreeChart:
                         setattr(self.people[cid], "adoption_bracket", True)
             self.families.append(Family(partners=partner_tuple, type=rel_type, children=children, child_meta=child_meta))
 
+        # Guardrail: never allow a single "aggregate child" (count-based placeholder) to be shared across
+        # multiple parent relationships. If it appears as a child of multiple families, split it into
+        # distinct placeholders per family (e.g., III-5a, III-5b) and distribute count evenly when possible.
+        #
+        # Rationale: It is valid for the same real child to be connected to multiple parent relationships
+        # in adoption scenarios, but aggregate placeholders must not be shared because they represent
+        # different (unknown) individuals under different parents.
+        def is_aggregate_placeholder(p: Person) -> bool:
+            if not getattr(p, "count", None):
+                return False
+            if (p.gender or "U").upper() != "U":
+                return False
+            if p.age is not None:
+                return False
+            if p.name is not None:
+                return False
+            if p.status:
+                return False
+            if p.diagnoses:
+                return False
+            if p.medical_notes:
+                return False
+            if p.genetic_testing:
+                return False
+            if getattr(p, "twin", None):
+                return False
+            if getattr(p, "pregnancy_event", None):
+                return False
+            if getattr(p, "sex_at_birth", None) is not None:
+                return False
+            return True
+
+        def suffix_for(idx0: int) -> str:
+            # 0 -> "a", 1 -> "b", 25 -> "z", 26 -> "aa"
+            alphabet = "abcdefghijklmnopqrstuvwxyz"
+            n = idx0
+            out = ""
+            while True:
+                out = alphabet[n % 26] + out
+                n = n // 26 - 1
+                if n < 0:
+                    break
+            return out
+
+        def unique_id(candidate: str) -> str:
+            if candidate not in self.people:
+                return candidate
+            i = 2
+            while f"{candidate}_{i}" in self.people:
+                i += 1
+            return f"{candidate}_{i}"
+
+        # Collect (family_idx, child_pos) refs for non-adoption child links.
+        adoption_relations = {"adopted", "adopted_in", "adopted_out", "foster"}
+        child_refs: Dict[str, List[Tuple[int, int]]] = {}
+        for fam_idx, fam in enumerate(self.families):
+            for child_pos, cid in enumerate(list(fam.children or [])):
+                meta = (fam.child_meta or {}).get(cid, {}) if isinstance(fam.child_meta, dict) else {}
+                relation = str(meta.get("relation") or "").strip().lower()
+                if relation in adoption_relations:
+                    continue
+                child_refs.setdefault(cid, []).append((fam_idx, child_pos))
+
+        for cid, refs in list(child_refs.items()):
+            if len(refs) <= 1:
+                continue
+            person = self.people.get(cid)
+            if not person or not is_aggregate_placeholder(person):
+                continue
+            raw_count = getattr(person, "count", None)
+            try:
+                total = int(str(raw_count))
+            except (TypeError, ValueError):
+                continue
+            n = len(refs)
+            if n <= 1:
+                continue
+            if total > 0 and total % n == 0:
+                per_counts = [total // n] * n
+            else:
+                base = total // n
+                rem = total % n
+                if base <= 0:
+                    per_counts = [1] * n
+                else:
+                    per_counts = [base + (1 if i < rem else 0) for i in range(n)]
+
+            # Remove the shared placeholder and replace with per-family placeholders.
+            base_order = int(self._input_order.pop(cid, 10_000))
+            del self.people[cid]
+
+            for i, (fam_idx, child_pos) in enumerate(refs):
+                new_id = unique_id(f"{cid}{suffix_for(i)}")
+                new_person: Person = copy.deepcopy(person)
+                new_person.id = new_id
+                new_person.x = 0.0
+                new_person.y = 0.0
+                new_person.display_number = 0
+                setattr(new_person, "count", str(per_counts[i]))
+                self.people[new_id] = new_person
+                self._input_order[new_id] = base_order + i
+
+                fam = self.families[fam_idx]
+                fam.children[child_pos] = new_id
+                if isinstance(fam.child_meta, dict) and cid in fam.child_meta:
+                    fam.child_meta[new_id] = fam.child_meta.pop(cid)
+
         # Process sibling relationships (for individuals without parents in the pedigree)
         for rel in relationships:
             rel_type = (rel.get("type") or "").strip().lower()
@@ -387,6 +498,38 @@ class PedigreeChart:
                 valid_sibs = [sid for sid in sibs if sid in self.people]
                 if len(valid_sibs) >= 2:
                     self.sibships.append(Sibship(siblings=valid_sibs))
+
+        # Heuristic augmentation: connect consultand to maternal uncles when explicitly noted.
+        # If children are annotated as "母方叔父の子", treat those single-parent fathers as siblings of
+        # the (single) consultand, even if the upstream JSON omitted that sibling link.
+        consultands = [p for p in self.people.values() if "consultand" in (p.status or [])]
+        if len(consultands) == 1:
+            consultand = consultands[0]
+            maternal_uncles: List[str] = []
+            for fam in self.families:
+                if len(fam.partners) != 1:
+                    continue
+                pid = fam.partners[0]
+                parent_p = self.people.get(pid)
+                if not parent_p or parent_p.generation != consultand.generation:
+                    continue
+                for cid in fam.children or []:
+                    child_p = self.people.get(cid)
+                    if child_p and child_p.note and "母方叔父" in child_p.note:
+                        maternal_uncles.append(pid)
+                        break
+            maternal_uncles = sorted(set(maternal_uncles))
+            if maternal_uncles:
+                group_set = {consultand.id, *maternal_uncles}
+                merged = False
+                for sibship in self.sibships:
+                    sset = set(sibship.siblings or [])
+                    if sset & group_set:
+                        sibship.siblings = sorted(sset | group_set, key=lambda x: self._input_order.get(x, 10_000))
+                        merged = True
+                        break
+                if not merged and len(group_set) >= 2:
+                    self.sibships.append(Sibship(siblings=sorted(group_set, key=lambda x: self._input_order.get(x, 10_000))))
 
         self._auto_layout()
 
@@ -403,152 +546,289 @@ class PedigreeChart:
         min_gen = min(p.generation for p in self.people.values())
         max_gen = max(p.generation for p in self.people.values())
 
-        initial_x: Dict[str, float] = {}
+        def rank_of(pid: str) -> int:
+            return int(self._layout_rank.get(pid, self._input_order.get(pid, 10_000)))
 
-        for gen in range(min_gen, max_gen + 1):
-            pinned_children_in_gen: set = set()
-            units = self._units_for_generation(gen)
+        def layout_once() -> None:
+            initial_x: Dict[str, float] = {}
 
-            # Baseline anchors: input order (deterministic)
-            for unit in units:
-                for pid in unit["members"]:
-                    initial_x.setdefault(pid, float(self._input_order.get(pid, 10_000)))
+            for gen in range(min_gen, max_gen + 1):
+                pinned_children_in_gen: set = set()
+                units = self._units_for_generation(gen)
 
-            # Refine anchors: if person is a child of a family in prev gen, anchor under that family midpoint.
-            if gen > min_gen:
-                for fam in self.families:
-                    if len(fam.partners) == 1:
-                        # Single parent: use parent's x position directly
-                        p1 = fam.partners[0]
-                        if self.people[p1].generation != gen - 1:
-                            continue
-                        mid = self.people[p1].x
-                        # IMPORTANT: For single parent with single child, position child directly under parent (vertical line)
-                        # Do not apply child_dx offset - keep child at parent's x position
-                        if len(fam.children) == 1:
-                            cid = fam.children[0]
-                            child = self.people.get(cid)
-                            if child and child.generation == gen:
-                                initial_x[cid] = mid  # Position child directly under parent
-                                pinned_children_in_gen.add(cid)
-                            continue
-                        # For multiple children, apply standard offset
-                        child_dx = self.symbol_size + 36.0
-                        n = len(fam.children)
-                        for idx, cid in enumerate(fam.children):
-                            child = self.people.get(cid)
-                            if not child or child.generation != gen:
-                                continue
-                            offset = (idx - (n - 1) / 2) * child_dx
-                            initial_x[cid] = mid + offset
-                    else:
-                        # Couple: use midpoint
-                        p1, p2 = fam.partners[0], fam.partners[1]
-                        if self.people[p1].generation != gen - 1 or self.people[p2].generation != gen - 1:
-                            continue
-                        mid = (self.people[p1].x + self.people[p2].x) / 2
-                        child_dx = self.symbol_size + 36.0
-                        n = len(fam.children)
-                        for idx, cid in enumerate(fam.children):
-                            child = self.people.get(cid)
-                            if not child or child.generation != gen:
-                                continue
-                            offset = (idx - (n - 1) / 2) * child_dx
-                            initial_x[cid] = mid + offset
-
-            # Calculate anchors for units
-            # Special case: if a couple contains a single child of a single parent,
-            # anchor the couple under the parent (for vertical line alignment)
-            for unit in units:
-                if unit["kind"] == "couple":
-                    # Check if either member is a single child of a single parent
-                    fixed_anchor = None
+                # Baseline anchors: layout rank (deterministic)
+                for unit in units:
                     for pid in unit["members"]:
-                        for fam in self.families:
-                            if len(fam.partners) == 1 and len(fam.children) == 1 and fam.children[0] == pid:
-                                # This person is a single child of a single parent
-                                parent_id = fam.partners[0]
-                                if parent_id in self.people and self.people[parent_id].generation == gen - 1:
-                                    # Anchor the couple under the parent
-                                    fixed_anchor = self.people[parent_id].x
-                                    break
+                        initial_x.setdefault(pid, float(rank_of(pid)))
+
+                # Refine anchors: if person is a child of a family in prev gen, anchor under that family midpoint.
+                if gen > min_gen:
+                    for fam in self.families:
+                        if len(fam.partners) == 1:
+                            # Single parent: use parent's x position directly
+                            p1 = fam.partners[0]
+                            if self.people[p1].generation != gen - 1:
+                                continue
+                            mid = self.people[p1].x
+                            # IMPORTANT: For single parent with single child, position child directly under parent (vertical line)
+                            # Do not apply child_dx offset - keep child at parent's x position
+                            if len(fam.children) == 1:
+                                cid = fam.children[0]
+                                child = self.people.get(cid)
+                                if child and child.generation == gen:
+                                    initial_x[cid] = mid  # Position child directly under parent
+                                    pinned_children_in_gen.add(cid)
+                                continue
+                            # For multiple children, apply standard offset
+                            child_dx = self.symbol_size + 36.0
+                            n = len(fam.children)
+                            for idx, cid in enumerate(fam.children):
+                                child = self.people.get(cid)
+                                if not child or child.generation != gen:
+                                    continue
+                                offset = (idx - (n - 1) / 2) * child_dx
+                                initial_x[cid] = mid + offset
+                        else:
+                            # Couple: use midpoint
+                            p1, p2 = fam.partners[0], fam.partners[1]
+                            if self.people[p1].generation != gen - 1 or self.people[p2].generation != gen - 1:
+                                continue
+                            mid = (self.people[p1].x + self.people[p2].x) / 2
+                            child_dx = self.symbol_size + 36.0
+                            n = len(fam.children)
+                            for idx, cid in enumerate(fam.children):
+                                child = self.people.get(cid)
+                                if not child or child.generation != gen:
+                                    continue
+                                offset = (idx - (n - 1) / 2) * child_dx
+                                initial_x[cid] = mid + offset
+
+                # Calculate anchors for units
+                # Special case: if a couple contains a single child of a single parent,
+                # anchor the couple under the parent (for vertical line alignment)
+                for unit in units:
+                    if unit["kind"] == "couple":
+                        # Check if either member is a single child of a single parent
+                        fixed_anchor = None
+                        for pid in unit["members"]:
+                            for fam in self.families:
+                                if len(fam.partners) == 1 and len(fam.children) == 1 and fam.children[0] == pid:
+                                    # This person is a single child of a single parent
+                                    parent_id = fam.partners[0]
+                                    if parent_id in self.people and self.people[parent_id].generation == gen - 1:
+                                        # Anchor the couple under the parent
+                                        fixed_anchor = self.people[parent_id].x
+                                        break
+                            if fixed_anchor is not None:
+                                break
                         if fixed_anchor is not None:
-                            break
-                    if fixed_anchor is not None:
-                        unit["anchor"] = fixed_anchor
+                            unit["anchor"] = fixed_anchor
+                        else:
+                            anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
+                            unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
                     else:
                         anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
                         unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
-                else:
-                    anchors = [initial_x.get(pid, 0.0) for pid in unit["members"]]
-                    unit["anchor"] = sum(anchors) / len(anchors) if anchors else 0.0
 
-            units.sort(key=lambda u: (u["anchor"], min(self._input_order.get(pid, 10_000) for pid in u["members"])))
+                # Ordering priority: layout rank first (crossing reduction), then anchor as a stabilizer.
+                units.sort(key=lambda u: (min(rank_of(pid) for pid in u["members"]), u["anchor"]))
 
-            cursor_left: Optional[float] = None
-            for unit in units:
-                width = unit["width"]
-                desired_left = unit["anchor"] - width / 2
-                if cursor_left is None:
-                    left = desired_left
-                else:
-                    left = max(desired_left, cursor_left)
-                unit["left"] = left
-                cursor_left = left + width + self.unit_gap
+                cursor_left: Optional[float] = None
+                for unit in units:
+                    width = unit["width"]
+                    desired_left = unit["anchor"] - width / 2
+                    if cursor_left is None:
+                        left = desired_left
+                    else:
+                        left = max(desired_left, cursor_left)
+                    unit["left"] = left
+                    cursor_left = left + width + self.unit_gap
 
-            # Post-pass: try to keep pinned single-parent children vertically aligned by compressing gaps
-            # (down to min_unit_gap) instead of letting unit_gap push them away.
-            if pinned_children_in_gen and units:
-                min_gap = float(getattr(self, "min_unit_gap", self.unit_gap))
-                for idx, unit in enumerate(units):
-                    if unit.get("kind") != "single":
-                        continue
-                    pid = (unit.get("members") or [None])[0]
-                    if pid not in pinned_children_in_gen:
-                        continue
-                    desired_left = unit["anchor"] - unit["width"] / 2
-                    shift_needed = unit["left"] - desired_left
-                    if shift_needed <= 1e-6:
-                        continue
-                    # Reduce gaps before this unit, starting from the nearest, shifting this unit and all to its right.
-                    for j in range(idx - 1, -1, -1):
-                        left_unit = units[j]
-                        right_unit = units[j + 1]
-                        gap = right_unit["left"] - (left_unit["left"] + left_unit["width"])
-                        reducible = gap - min_gap
-                        if reducible <= 1e-6:
+                # Post-pass: try to keep pinned single-parent children vertically aligned by compressing gaps
+                # (down to min_unit_gap) instead of letting unit_gap push them away.
+                if pinned_children_in_gen and units:
+                    min_gap = float(getattr(self, "min_unit_gap", self.unit_gap))
+                    for idx, unit in enumerate(units):
+                        if unit.get("kind") != "single":
                             continue
-                        take = reducible if reducible < shift_needed else shift_needed
-                        if take <= 1e-6:
+                        pid = (unit.get("members") or [None])[0]
+                        if pid not in pinned_children_in_gen:
                             continue
-                        for k in range(j + 1, len(units)):
-                            units[k]["left"] -= take
-                        shift_needed -= take
+                        desired_left = unit["anchor"] - unit["width"] / 2
+                        shift_needed = unit["left"] - desired_left
                         if shift_needed <= 1e-6:
-                            break
+                            continue
+                        # Reduce gaps before this unit, starting from the nearest, shifting this unit and all to its right.
+                        for j in range(idx - 1, -1, -1):
+                            left_unit = units[j]
+                            right_unit = units[j + 1]
+                            gap = right_unit["left"] - (left_unit["left"] + left_unit["width"])
+                            reducible = gap - min_gap
+                            if reducible <= 1e-6:
+                                continue
+                            take = reducible if reducible < shift_needed else shift_needed
+                            if take <= 1e-6:
+                                continue
+                            for k in range(j + 1, len(units)):
+                                units[k]["left"] -= take
+                            shift_needed -= take
+                            if shift_needed <= 1e-6:
+                                break
 
-            for unit in units:
-                if unit["kind"] == "single":
-                    pid = unit["members"][0]
-                    self.people[pid].x = unit["left"] + unit["width"] / 2
-                else:
-                    left_pid, right_pid = unit["members"]
-                    left_cx = unit["left"] + self.symbol_size / 2
-                    dx = self.symbol_size + self.spouse_gap
-                    self.people[left_pid].x = left_cx
-                    self.people[right_pid].x = left_cx + dx
+                for unit in units:
+                    if unit["kind"] == "single":
+                        pid = unit["members"][0]
+                        self.people[pid].x = unit["left"] + unit["width"] / 2
+                    else:
+                        left_pid, right_pid = unit["members"]
+                        left_cx = unit["left"] + self.symbol_size / 2
+                        dx = self.symbol_size + self.spouse_gap
+                        self.people[left_pid].x = left_cx
+                        self.people[right_pid].x = left_cx + dx
 
-            for person in self.people.values():
-                if person.generation == gen:
-                    person.y = (gen - min_gen) * self.gen_gap
+                for person in self.people.values():
+                    if person.generation == gen:
+                        person.y = (gen - min_gen) * self.gen_gap
 
-        xs = [p.x for p in self.people.values()]
-        ys = [p.y for p in self.people.values()]
-        min_x = min(xs) if xs else 0.0
-        min_y = min(ys) if ys else 0.0
-        for p in self.people.values():
-            p.x = p.x - min_x + self.margin_x
-            p.y = p.y - min_y + self.margin_y
+            xs = [p.x for p in self.people.values()]
+            ys = [p.y for p in self.people.values()]
+            min_x = min(xs) if xs else 0.0
+            min_y = min(ys) if ys else 0.0
+            for p in self.people.values():
+                p.x = p.x - min_x + self.margin_x
+                p.y = p.y - min_y + self.margin_y
+
+        def optimize_ranks_by_barycenter() -> bool:
+            # Build generation -> units based on current positions (couples stay as units).
+            units_by_gen: Dict[int, List[dict]] = {}
+            pid_to_unit: Dict[str, Tuple[int, Tuple[str, ...]]] = {}
+            unit_members: Dict[Tuple[int, Tuple[str, ...]], Tuple[str, ...]] = {}
+
+            for gen in range(min_gen, max_gen + 1):
+                units = self._units_for_generation(gen)
+                # Compute unit center by current placed x positions.
+                def unit_center(u: dict) -> float:
+                    xs = [self.people[pid].x for pid in u["members"] if pid in self.people]
+                    return sum(xs) / len(xs) if xs else 0.0
+
+                ordered = sorted(units, key=unit_center)
+                units_by_gen[gen] = ordered
+                for u in ordered:
+                    members = tuple(u["members"])
+                    key = (gen, members)
+                    unit_members[key] = members
+                    for pid in members:
+                        pid_to_unit[pid] = key
+
+            # Build edges between adjacent generations in unit-space.
+            edges_down: Dict[Tuple[int, Tuple[str, ...]], List[Tuple[int, Tuple[str, ...]]]] = {}
+            edges_up: Dict[Tuple[int, Tuple[str, ...]], List[Tuple[int, Tuple[str, ...]]]] = {}
+
+            for fam in self.families:
+                partners = list(fam.partners)
+                for cid in fam.children:
+                    if cid not in self.people:
+                        continue
+                    child = self.people[cid]
+                    ckey = pid_to_unit.get(cid)
+                    if not ckey:
+                        continue
+                    parent_unit_keys = set()
+                    for pid in partners:
+                        if pid not in self.people:
+                            continue
+                        parent = self.people[pid]
+                        if parent.generation != child.generation - 1:
+                            continue
+                        pkey = pid_to_unit.get(pid)
+                        if not pkey:
+                            continue
+                        parent_unit_keys.add(pkey)
+                    for pkey in parent_unit_keys:
+                        edges_down.setdefault(pkey, []).append(ckey)
+                        edges_up.setdefault(ckey, []).append(pkey)
+
+            def order_positions(gen: int) -> Dict[Tuple[int, Tuple[str, ...]], int]:
+                return { (gen, tuple(u["members"])): i for i, u in enumerate(units_by_gen.get(gen, [])) }
+
+            changed_any = False
+
+            # Downward sweep: order gen+1 by parents in gen.
+            for gen in range(min_gen + 1, max_gen + 1):
+                prev_pos = order_positions(gen - 1)
+                cur_units = units_by_gen.get(gen, [])
+                cur_pos = order_positions(gen)
+
+                scored = []
+                for u in cur_units:
+                    key = (gen, tuple(u["members"]))
+                    parents = edges_up.get(key, [])
+                    if parents:
+                        vals = [prev_pos.get(pk) for pk in parents if pk in prev_pos]
+                        bary = sum(vals) / len(vals) if vals else cur_pos.get(key, 0)
+                    else:
+                        bary = cur_pos.get(key, 0)
+                    scored.append((bary, cur_pos.get(key, 0), key))
+
+                scored.sort()
+                new_order = [k for _, __, k in scored]
+                old_order = [ (gen, tuple(u["members"])) for u in cur_units ]
+                if new_order != old_order:
+                    changed_any = True
+                # Apply as layout ranks for this generation.
+                for unit_idx, key in enumerate(new_order):
+                    members = unit_members.get(key, ())
+                    for member_idx, pid in enumerate(members):
+                        self._layout_rank[pid] = unit_idx * 10 + member_idx
+
+            # Upward sweep: order gen by children in gen+1.
+            for gen in range(max_gen - 1, min_gen - 1, -1):
+                next_pos = order_positions(gen + 1)
+                cur_units = units_by_gen.get(gen, [])
+                cur_pos = order_positions(gen)
+
+                scored = []
+                for u in cur_units:
+                    key = (gen, tuple(u["members"]))
+                    children = edges_down.get(key, [])
+                    if children:
+                        vals = [next_pos.get(ck) for ck in children if ck in next_pos]
+                        bary = sum(vals) / len(vals) if vals else cur_pos.get(key, 0)
+                    else:
+                        bary = cur_pos.get(key, 0)
+                    scored.append((bary, cur_pos.get(key, 0), key))
+
+                scored.sort()
+                new_order = [k for _, __, k in scored]
+                old_order = [ (gen, tuple(u["members"])) for u in cur_units ]
+                if new_order != old_order:
+                    changed_any = True
+                for unit_idx, key in enumerate(new_order):
+                    members = unit_members.get(key, ())
+                    for member_idx, pid in enumerate(members):
+                        self._layout_rank[pid] = unit_idx * 10 + member_idx
+
+            return changed_any
+
+        # Initialize ranks to input order per generation.
+        for pid in self.people.keys():
+            self._layout_rank[pid] = int(self._input_order.get(pid, 10_000))
+
+        # Optional: a few refinement iterations to reduce crossings.
+        iters = int(self.optimize_layout_max_iters) if self.optimize_layout_for_crossings else 0
+        # Allow meta override (useful for debugging / regression checks).
+        if str(self._meta.get("optimize_layout_for_crossings", "")).strip().lower() in {"0", "false", "no"}:
+            iters = 0
+        if iters <= 0:
+            layout_once()
+        else:
+            # Alternate between layout and ordering refinement; finish with one last layout.
+            for _ in range(iters):
+                layout_once()
+                changed = optimize_ranks_by_barycenter()
+                if not changed:
+                    break
+            layout_once()
 
         # Assign display numbers (left to right in each generation, JOHBOC 図5)
         self._assign_display_numbers()
@@ -569,11 +849,14 @@ class PedigreeChart:
         used = set()
         units: List[dict] = []
 
+        def rank_of(pid: str) -> int:
+            return int(self._layout_rank.get(pid, self._input_order.get(pid, 10_000)))
+
         def family_sort_key(fam: Family) -> int:
             if len(fam.partners) == 1:
-                return self._input_order.get(fam.partners[0], 10_000)
+                return rank_of(fam.partners[0])
             else:
-                return min(self._input_order.get(fam.partners[0], 10_000), self._input_order.get(fam.partners[1], 10_000))
+                return min(rank_of(fam.partners[0]), rank_of(fam.partners[1]))
 
         families_in_gen = [
             fam
@@ -602,7 +885,7 @@ class PedigreeChart:
             used.add(p2)
 
         remaining = [pid for pid in members_in_gen if pid not in used]
-        remaining.sort(key=lambda pid: self._input_order.get(pid, 10_000))
+        remaining.sort(key=rank_of)
         for pid in remaining:
             units.append({"kind": "single", "members": [pid], "width": self.symbol_size, "anchor": 0.0, "left": 0.0})
         return units
@@ -1099,17 +1382,56 @@ class PedigreeChart:
         parent_bottom = parent1.y
         child_top = min(c.y for c in children) - self.symbol_size / 2
 
-        if len(children) == 1:
-            # Single child: draw vertical line from parent directly down (JOHBOC standard)
-            child = children[0]
+        # Always draw the standard "down + sibship bar + child connector(s)" shape, even for 1 child.
+        # This avoids dangling lines when layout shifts a child away from the parent's x.
+        mid_y = parent_bottom + (child_top - parent_bottom) * 0.75
+
+        # Vertical line from parent to sibship line
+        ET.SubElement(
+            parent,
+            "line",
+            {
+                "id": self._sid("down", parent1.id),
+                "x1": str(px),
+                "y1": str(parent_bottom),
+                "x2": str(px),
+                "y2": str(mid_y),
+                "stroke": "#000",
+                "stroke-width": str(self.stroke_width),
+                "fill": "none",
+            },
+        )
+
+        child_xs = [c.x for c in children]
+        min_x, max_x = min(child_xs), max(child_xs)
+        # Ensure the horizontal bar reaches the parent's drop line even if children were shifted.
+        min_x = min(min_x, px)
+        max_x = max(max_x, px)
+        ET.SubElement(
+            parent,
+            "line",
+            {
+                "id": self._sid("sib", parent1.id),
+                "x1": str(min_x),
+                "y1": str(mid_y),
+                "x2": str(max_x),
+                "y2": str(mid_y),
+                "stroke": "#000",
+                "stroke-width": str(self.stroke_width),
+                "fill": "none",
+            },
+        )
+
+        # Vertical lines from sibship line to each child
+        for child in children:
             meta = child_meta.get(child.id, {}) if isinstance(child_meta, dict) else {}
             relation = str(meta.get("relation") or "").strip().lower()
             dash = "6,4" if relation in {"adopted", "adopted_in", "adopted_out", "foster"} else None
             attrs = {
                 "id": self._sid("child", parent1.id, child.id),
-                "x1": str(px),
-                "y1": str(parent_bottom),
-                "x2": str(px),  # Vertical line: same x position
+                "x1": str(child.x),
+                "y1": str(mid_y),
+                "x2": str(child.x),
                 "y2": str(child_top),
                 "stroke": "#000",
                 "stroke-width": str(self.stroke_width),
@@ -1118,59 +1440,6 @@ class PedigreeChart:
             if dash:
                 attrs["stroke-dasharray"] = dash
             ET.SubElement(parent, "line", attrs)
-        else:
-            # Multiple children: draw T-shaped connection
-            mid_y = parent_bottom + (child_top - parent_bottom) * 0.75
-            # Vertical line from parent to sibship line
-            ET.SubElement(
-                parent,
-                "line",
-                {
-                    "id": self._sid("down", parent1.id),
-                    "x1": str(px),
-                    "y1": str(parent_bottom),
-                    "x2": str(px),
-                    "y2": str(mid_y),
-                    "stroke": "#000",
-                    "stroke-width": str(self.stroke_width),
-                    "fill": "none",
-                },
-            )
-            # Horizontal sibship line across children
-            child_xs = [c.x for c in children]
-            min_x, max_x = min(child_xs), max(child_xs)
-            ET.SubElement(
-                parent,
-                "line",
-                {
-                    "id": self._sid("sib", parent1.id),
-                    "x1": str(min_x),
-                    "y1": str(mid_y),
-                    "x2": str(max_x),
-                    "y2": str(mid_y),
-                    "stroke": "#000",
-                    "stroke-width": str(self.stroke_width),
-                    "fill": "none",
-                },
-            )
-            # Vertical lines from sibship line to each child
-            for child in children:
-                meta = child_meta.get(child.id, {}) if isinstance(child_meta, dict) else {}
-                relation = str(meta.get("relation") or "").strip().lower()
-                dash = "6,4" if relation in {"adopted", "adopted_in", "adopted_out", "foster"} else None
-                attrs = {
-                    "id": self._sid("child", parent1.id, child.id),
-                    "x1": str(child.x),
-                    "y1": str(mid_y),
-                    "x2": str(child.x),
-                    "y2": str(child_top),
-                    "stroke": "#000",
-                    "stroke-width": str(self.stroke_width),
-                    "fill": "none",
-                }
-                if dash:
-                    attrs["stroke-dasharray"] = dash
-                ET.SubElement(parent, "line", attrs)
 
     def _draw_sibship_line(self, parent: ET.Element, siblings: List[Person]) -> None:
         """Draw sibship line for siblings without parents (JOHBOC standard)"""
@@ -1187,26 +1456,143 @@ class PedigreeChart:
         left = sibs_sorted[0]
         right = sibs_sorted[-1]
 
-        # Draw horizontal line above the siblings (sibship line)
-        y = left.y - self.symbol_size / 2 - 15.0  # Position above the symbols
+        # Draw horizontal line above the siblings (sibship line).
+        # Prefer not to cross existing parent/child vertical lines; if unavoidable, draw a "jump" (bridge)
+        # on the horizontal line to keep crossings readable (MGenAid-style).
+        base_y = left.y - self.symbol_size / 2 - 15.0  # Position above the symbols
         min_x = left.x
         max_x = right.x
+        # Keep id stable regardless of layout order (so re-optimization doesn't churn ids).
+        sibship_id = self._sid("sibship", "grp", "_".join(sorted(s.id for s in siblings)))
 
-        # Draw the horizontal sibship line
-        ET.SubElement(
-            parent,
-            "line",
-            {
-                "id": self._sid("sibship", "_".join(s.id for s in sibs_sorted[:2])),
-                "x1": str(min_x),
-                "y1": str(y),
-                "x2": str(max_x),
-                "y2": str(y),
-                "stroke": "#000",
-                "stroke-width": str(self.stroke_width),
-                "fill": "none",
-            },
-        )
+        def existing_verticals() -> List[Tuple[float, float, float]]:
+            out: List[Tuple[float, float, float]] = []
+            for el in list(parent):
+                if not isinstance(el.tag, str) or not el.tag.endswith("line"):
+                    continue
+                x1 = el.attrib.get("x1")
+                y1 = el.attrib.get("y1")
+                x2 = el.attrib.get("x2")
+                y2 = el.attrib.get("y2")
+                if x1 is None or y1 is None or x2 is None or y2 is None:
+                    continue
+                try:
+                    fx1, fy1, fx2, fy2 = float(x1), float(y1), float(x2), float(y2)
+                except ValueError:
+                    continue
+                if abs(fx1 - fx2) > 1e-6:
+                    continue
+                lo, hi = (fy1, fy2) if fy1 <= fy2 else (fy2, fy1)
+                out.append((fx1, lo, hi))
+            return out
+
+        def intersections_at_y(y: float) -> List[float]:
+            xs: List[float] = []
+            for x, y_lo, y_hi in vlines:
+                if min_x < x < max_x and y_lo < y < y_hi:
+                    xs.append(x)
+            # de-dupe and keep stable ordering
+            xs = sorted(set(round(x, 6) for x in xs))
+            return xs
+
+        def existing_horizontals() -> List[Tuple[float, float, float]]:
+            out: List[Tuple[float, float, float]] = []
+            for el in list(parent):
+                if not isinstance(el.tag, str) or not el.tag.endswith("line"):
+                    continue
+                x1 = el.attrib.get("x1")
+                y1 = el.attrib.get("y1")
+                x2 = el.attrib.get("x2")
+                y2 = el.attrib.get("y2")
+                if x1 is None or y1 is None or x2 is None or y2 is None:
+                    continue
+                try:
+                    fx1, fy1, fx2, fy2 = float(x1), float(y1), float(x2), float(y2)
+                except ValueError:
+                    continue
+                if abs(fy1 - fy2) > 1e-6:
+                    continue
+                if abs(fx1 - fx2) <= 1e-6:
+                    continue
+                lo, hi = (fx1, fx2) if fx1 <= fx2 else (fx2, fx1)
+                out.append((fy1, lo, hi))
+            return out
+
+        vlines = existing_verticals()
+        hlines = existing_horizontals()
+
+        # Candidate Y values (base, then slightly higher). Choose the one that minimizes crossings:
+        # - crossings of the horizontal sibship line with existing vertical lines
+        # - crossings of the sibship-to-sibling vertical connectors with existing horizontal lines
+        candidates = [base_y - 8.0 * i for i in range(0, 7)]
+        best = None
+        for cand_y in candidates:
+            xs_cand = intersections_at_y(cand_y)
+            horiz_cross = len(xs_cand)
+            # Connector crossings: each connector is a vertical line from cand_y to symbol top.
+            conn_cross = 0
+            for sib in sibs_sorted:
+                x = sib.x
+                y_top = sib.y - self.symbol_size / 2
+                y_lo, y_hi = (cand_y, y_top) if cand_y <= y_top else (y_top, cand_y)
+                for hy, hx1, hx2 in hlines:
+                    if hx1 < x < hx2 and y_lo < hy < y_hi:
+                        conn_cross += 1
+            score = horiz_cross + 2 * conn_cross
+            key = (score, abs(cand_y - base_y))
+            if best is None or key < best[0]:
+                best = (key, cand_y, xs_cand)
+
+        assert best is not None
+        _, y, xs = best
+
+        use_jumps = bool(xs)
+
+        if not use_jumps:
+            ET.SubElement(
+                parent,
+                "line",
+                {
+                    "id": sibship_id,
+                    "x1": str(min_x),
+                    "y1": str(y),
+                    "x2": str(max_x),
+                    "y2": str(y),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                },
+            )
+        else:
+            # Render as a single path with small "bridge" bumps at each crossing X.
+            r = max(5.0, self.stroke_width * 2.5)
+            h = r  # jump height
+            d_parts = [f"M {min_x} {y}"]
+            cursor = min_x
+            for x in xs:
+                left_x = max(min_x, x - r)
+                right_x = min(max_x, x + r)
+                if left_x <= cursor + 1e-6:
+                    continue
+                # Avoid generating degenerate bumps near endpoints.
+                if right_x >= max_x - 1e-6 or left_x <= min_x + 1e-6:
+                    continue
+                d_parts.append(f"L {left_x} {y}")
+                # Quadratic curve up-and-over the crossing point.
+                d_parts.append(f"Q {x} {y - h} {right_x} {y}")
+                cursor = right_x
+            d_parts.append(f"L {max_x} {y}")
+            ET.SubElement(
+                parent,
+                "path",
+                {
+                    "id": sibship_id,
+                    "d": " ".join(d_parts),
+                    "stroke": "#000",
+                    "stroke-width": str(self.stroke_width),
+                    "fill": "none",
+                },
+            )
 
         # Draw vertical lines connecting each sibling to the sibship line
         for sib in sibs_sorted:
@@ -1298,7 +1684,7 @@ class PedigreeChart:
         karyotype = str((preg_event.get("karyotype") or "")).strip() if isinstance(preg_event, dict) else ""
         lmp = str((preg_event.get("lmp") or "")).strip() if isinstance(preg_event, dict) else ""
         edd = str((preg_event.get("edd") or "")).strip() if isinstance(preg_event, dict) else ""
-        note = str((preg_event.get("note") or "")).strip() if isinstance(preg_event, dict) else ""
+        preg_note = str((preg_event.get("note") or "")).strip() if isinstance(preg_event, dict) else ""
 
         # Pregnancy-related symbols (JOHBOC 図4)
         is_ectopic = "ectopic" in person.status or preg_type == "ECT"
@@ -1447,6 +1833,11 @@ class PedigreeChart:
         for dx in person.diagnoses:
             if isinstance(dx, dict):
                 condition = str(dx.get("condition") or "").strip()
+                dx_notes = str(dx.get("notes") or dx.get("note") or "").strip()
+                if condition == "その他の腫瘍" and dx_notes:
+                    # Keep the displayed diagnosis specific (e.g., "胃癌", "骨肉腫") while coloring can
+                    # still group them under "その他の腫瘍".
+                    condition = dx_notes
                 age_at_dx = str(dx.get("age_at_diagnosis") or "").strip()
                 if condition:
                     if age_at_dx:
@@ -1463,8 +1854,10 @@ class PedigreeChart:
             if isinstance(note_item, str) and note_item.strip():
                 below.append(_normalize_age_notation(note_item.strip()))
 
-        if note:
-            below.extend(_wrap_text(note, 18))
+        if preg_note:
+            below.extend(_wrap_text(preg_note, 18))
+        if person.note:
+            below.extend(_wrap_text(person.note, 18))
         if person.name:
             below.extend(_wrap_text(person.name, 18))
 
@@ -1526,10 +1919,21 @@ class PedigreeChart:
             return "#000"
         for dx in person.diagnoses:
             if isinstance(dx, dict):
-                key = _canonical_condition(dx.get("condition"))
+                key = self._legend_key_for_diagnosis(dx)
                 if key and key in self.legend_conditions:
                     return self._condition_fill.get(key, "#000")
         return "#000"
+
+    def _legend_key_for_diagnosis(self, dx: dict) -> str:
+        """Return the condition key used for coloring/legend matching."""
+        key = _canonical_condition(dx.get("condition"))
+        if not key:
+            return ""
+        if key in self.legend_conditions:
+            return key
+        if "その他の腫瘍" in self.legend_conditions and key not in {"乳癌", "白血病"}:
+            return "その他の腫瘍"
+        return key
 
     def _draw_person_symbol(self, parent: ET.Element, person: Person, cx: float, cy: float, *, stroke: dict, is_affected: bool) -> None:
         """Draw sex symbol with JOHBOC 図2-style condition fills (incl. split for 2+ conditions)."""
@@ -1544,7 +1948,7 @@ class PedigreeChart:
         conds: List[str] = []
         for dx in person.diagnoses:
             if isinstance(dx, dict):
-                key = _canonical_condition(dx.get("condition"))
+                key = self._legend_key_for_diagnosis(dx)
                 if key and key in self.legend_conditions and key not in conds:
                     conds.append(key)
 
